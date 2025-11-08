@@ -1,0 +1,15 @@
+# Python virtual environment
+.venv/
+
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Logs and environment files
+*.log
+*.env
+
+# OS-specific junk
+.DS_Store
+Thumbs.db
