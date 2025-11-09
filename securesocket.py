@@ -197,7 +197,7 @@ class SecureConnection(object):
 		try:
 			self._conn.shutdown(socket.SHUT_RDWR)
 		except:
-			raise Exception("Failed to shutdown the connection")
+			print("Failed to shutdown the connection")
 		self._connected = False
 		self._conn.close()
 		if removeconnfromsock:
