@@ -1,13 +1,12 @@
 import socket
 import threading
-import time
 
 
 class SecureSocket(object):
 	def __repr__(self):
 		return f"SecureSocket object    hostadress: {self._HOSTADDRESS}    hostname: {self._HOSTNAME}    port: {self._PORT}"
 	
-	def __init__(self, PORT, HEADER, FORMAT, DISCONN_MSG):
+	def __init__(self, PORT, HEADER, FORMAT, DISCONN_MSG, HANDSHAKE_MSG):
 		self._online = False
 		self._PORT = PORT
 		self._HOSTNAME = socket.gethostname()
@@ -16,6 +15,7 @@ class SecureSocket(object):
 		self._HEADER = HEADER
 		self._FORMAT = FORMAT
 		self._DISCONN_MSG = DISCONN_MSG
+		self._HANDSHAKE_MSG = HANDSHAKE_MSG
 		self._conns = []
 		self._master_thread = threading.Thread(target=self._master)
 		
@@ -32,8 +32,9 @@ class SecureSocket(object):
 			self._master_thread.start()
 		else:
 			for conn in self._conns:
-				conn.start_disconn()
+				conn.start_disconn(False)
 			self._master_conn.close()
+			self._conns = []
 			print("successfully closed the master connection")
 
 
@@ -41,8 +42,12 @@ class SecureSocket(object):
 		print(f"[STARTING] master is starting...")
 		
 	
+	
 	def remove_conn(self, conn_to_remove):
-		self._conns.remove(conn_to_remove)
+		try:
+			self._conns.remove(conn_to_remove)
+		except:
+			raise Exception(f"Cannot remove {conn_to_remove} from {self._conns}")
 
 	def get_header(self):
 		return self._HEADER
@@ -52,11 +57,12 @@ class SecureSocket(object):
 	
 	def get_disconn_msg(self):
 		return self._DISCONN_MSG
+	
+	def get_handshake_msg(self):
+		return self._HANDSHAKE_MSG
+	
 
 class Server(SecureSocket):
-	def __init__(self, PORT, HEADER, FORMAT, DISCONN_MSG):
-		super().__init__(PORT, HEADER, FORMAT, DISCONN_MSG)
-		
 	def _setup_master_conn(self):
 		super()._setup_master_conn()
 		self._master_conn.bind(self._ADDR)
@@ -83,9 +89,11 @@ class Server(SecureSocket):
 
 
 
+
+
 class Client(SecureSocket):
-	def __init__(self, PORT, HEADER, FORMAT, DISCONN_MSG, TARGET_HOSTADDRESS):
-		super().__init__(PORT, HEADER, FORMAT, DISCONN_MSG)
+	def __init__(self, PORT, HEADER, FORMAT, DISCONN_MSG, HANDSHAKE_MSG, TARGET_HOSTADDRESS):
+		super().__init__(PORT, HEADER, FORMAT, DISCONN_MSG, HANDSHAKE_MSG)
 		self._TARGET_HOSTADDRESS = TARGET_HOSTADDRESS
 		self._TARGET_ADDR = (self._TARGET_HOSTADDRESS, self._PORT)
 		
@@ -101,8 +109,10 @@ class Client(SecureSocket):
 				self.set_socket_status(False)
 				break
 
-	def send(self, msg):
-		self._conns[0].send(msg)
+	def get_conn(self):
+		if len(self._conns) == 0:
+			raise Exception("There is no active connection")
+		return self._conns[0]
 
 
 
@@ -120,21 +130,16 @@ class SecureConnection(object):
 
 	def _handle_conn(self):
 		print(f"[NEW CONNECTION] {self._addr} connected.")
-
 		self._connected = True
+
+		if type(self._sock) == Server:
+			if not self._start_handshake():
+				self.start_disconn(True)
+
+
 		while self._connected:
 			try:
-				msg_length_text = self._conn.recv(self._sock.get_header()).decode(self._sock.get_format())
-			except:
-				continue # if we can't receive anymore then that means this connection has shutdown
-
-			if not msg_length_text:
-				continue
-			
-			msg_length = int(msg_length_text)
-
-			try:
-				msg = self._conn.recv(msg_length).decode(self._sock.get_format())
+				msg = self._receive()
 			except:
 				continue # if we can't receive anymore then that means this connection has shutdown
 
@@ -142,10 +147,23 @@ class SecureConnection(object):
 
 			if msg == self._sock.get_disconn_msg():
 				self._handle_disconn()
+			elif msg == self._sock.get_handshake_msg():
+				self._handle_handshake()
+
+	def _receive(self):
+		msg_length_text = self._conn.recv(self._sock.get_header()).decode(self._sock.get_format())
+		if not msg_length_text:
+			return ""
+		msg_length = int(msg_length_text)
+
+		msg = self._conn.recv(msg_length).decode(self._sock.get_format())
+
+		return msg
 
 
-	
 	def send(self, msg:str):
+		if not self._connected:
+			raise Exception("Cannot send as not connected")
 		print(f"sending message: {msg}")
 		message = msg.encode(self._sock.get_format())
 		msg_length = len(message)
@@ -154,17 +172,33 @@ class SecureConnection(object):
 		self._conn.send(send_length)
 		self._conn.send(message)
 		
-	def start_disconn(self): # runs if we initiated the disconn
+	def _start_handshake(self):
+		try:
+			self.send(self._sock.get_handshake_msg())
+			if self._receive() != self._sock.get_handshake_msg():
+				return False
+			return True
+		except:
+			return False
+
+	def _handle_handshake(self):
+		self.send(self._sock.get_handshake_msg())
+
+	def start_disconn(self, removeconnfromsock:bool): # runs if we initiated the disconn
 		print("we ended the connection")
 		self.send(self._sock.get_disconn_msg())
-		self._disconn()
+		self._disconn(removeconnfromsock)
 
 	def _handle_disconn(self): # runs if the disconn was initiated by the other side
 		print("they ended the connection")
-		self._sock.remove_conn(self)
-		self._disconn()
+		self._disconn(True)
 
-	def _disconn(self):
-		self._conn.shutdown(socket.SHUT_RDWR)
+	def _disconn(self, removeconnfromsock:bool): # removeconnfromsock should usually be true, as after a conn has been disconned, it should no longer be in the list of conns on the sock obj, but for example if conns in the sock are being iterated through to be disconned, we shouldn't remove an item from the list that's being iterated through
+		try:
+			self._conn.shutdown(socket.SHUT_RDWR)
+		except:
+			raise Exception("Failed to shutdown the connection")
 		self._connected = False
 		self._conn.close()
+		if removeconnfromsock:
+			self._sock.remove_conn(self)
