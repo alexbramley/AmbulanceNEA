@@ -1,6 +1,17 @@
 import socket
 import threading
+import time
+import rsa
 
+# these keys are used for data transfer during the initial handshake in a connection, before the two parties have exchanged new randomly generated keys
+
+with open("default-public.pem","rb") as f:
+	DEFAULT_PUBLIC_KEY = rsa.PublicKey.load_pkcs1(f.read())
+
+with open("default-private.pem","rb") as f:
+	DEFAULT_PRIVATE_KEY = rsa.PrivateKey.load_pkcs1(f.read())
+
+print(rsa.decrypt(rsa.encrypt("test message".encode("utf-8"), DEFAULT_PUBLIC_KEY), DEFAULT_PRIVATE_KEY).decode("utf-8"))
 
 class SecureSocket(object):
 	def __repr__(self):
@@ -123,7 +134,11 @@ class SecureConnection(object):
 		self._addr = addr
 		self._connected = False
 
-		self._conn.settimeout(0.1)
+		
+
+		self._public_key = DEFAULT_PUBLIC_KEY
+		self._private_key = DEFAULT_PRIVATE_KEY
+		self._recipient_public_key = DEFAULT_PUBLIC_KEY
 
 		self._conn_thread = threading.Thread(target=self._handle_conn)
 		self._conn_thread.start()
@@ -151,34 +166,64 @@ class SecureConnection(object):
 				self._handle_handshake()
 
 	def _receive(self):
-		msg_length_text = self._conn.recv(self._sock.get_header()).decode(self._sock.get_format())
+		print("we are getting a brand new message")
+		encrypted_msg_length_bytes = self._conn.recv(128)
+		print(f"received length of message {encrypted_msg_length_bytes}\n")
+		msg_length_bytes = rsa.decrypt(encrypted_msg_length_bytes, DEFAULT_PRIVATE_KEY)
+		print(f"decrypted length of message {msg_length_bytes}\n")
+		msg_length_text = msg_length_bytes.decode(self._sock.get_format())
+
 		if not msg_length_text:
 			return ""
+		print(f"message is {msg_length_text} bits long")
 		msg_length = int(msg_length_text)
 
-		msg = self._conn.recv(msg_length).decode(self._sock.get_format())
+		encrypted_message = self._conn.recv(128)
+		print(f"received message {encrypted_message}\n")
+		message = rsa.decrypt(encrypted_message, DEFAULT_PRIVATE_KEY).decode(self._sock.get_format())
 
-		return msg
+		return message
 
 
 	def send(self, msg:str):
 		if not self._connected:
 			raise Exception("Cannot send as not connected")
 		print(f"sending message: {msg}")
+		
 		message = msg.encode(self._sock.get_format())
-		msg_length = len(message)
+		encrypted_message = rsa.encrypt(message, DEFAULT_PUBLIC_KEY)
+		
+		msg_length = len(encrypted_message)
 		send_length = str(msg_length).encode(self._sock.get_format())
 		send_length += b" " * (self._sock.get_header() - len(send_length))
-		self._conn.send(send_length)
-		self._conn.send(message)
 		
+		encrypted_send_length = rsa.encrypt(send_length, DEFAULT_PUBLIC_KEY)
+
+		self._conn.send(encrypted_send_length)
+		print(f"sent length {rsa.decrypt(encrypted_send_length, DEFAULT_PRIVATE_KEY)}\n")
+		time.sleep(0.1)
+		self._conn.send(encrypted_message)
+		print(f"sent msg {rsa.decrypt(encrypted_message, DEFAULT_PRIVATE_KEY)}\n")
+		time.sleep(0.1)
+
+
 	def _start_handshake(self):
 		try:
 			self.send(self._sock.get_handshake_msg())
-			if self._receive() != self._sock.get_handshake_msg():
+			print("handshake message sent!")
+			
+			response = self._receive()
+			print(response)
+			
+			if response != self._sock.get_handshake_msg():
 				return False
+			
+			#self._public_key, self._private_key = rsa.newkeys(1024)
+
+			
 			return True
-		except:
+		except Exception as e:
+			print(f"Handshake failed: {e}")
 			return False
 
 	def _handle_handshake(self):
