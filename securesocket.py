@@ -2,6 +2,7 @@ import socket
 import threading
 import time
 import rsa
+import struct
 
 # these keys are used for data transfer during the initial handshake in a connection, before the two parties have exchanged new randomly generated keys
 
@@ -11,19 +12,21 @@ with open("default-public.pem","rb") as f:
 with open("default-private.pem","rb") as f:
 	DEFAULT_PRIVATE_KEY = rsa.PrivateKey.load_pkcs1(f.read())
 
+KEYSIZE = 1024
+MAXMSGLENGTH = 117
+
 print(rsa.decrypt(rsa.encrypt("test message".encode("utf-8"), DEFAULT_PUBLIC_KEY), DEFAULT_PRIVATE_KEY).decode("utf-8"))
 
 class SecureSocket(object):
 	def __repr__(self):
 		return f"SecureSocket object    hostadress: {self._HOSTADDRESS}    hostname: {self._HOSTNAME}    port: {self._PORT}"
 	
-	def __init__(self, PORT, HEADER, FORMAT, DISCONN_MSG, HANDSHAKE_MSG):
+	def __init__(self, PORT, FORMAT, DISCONN_MSG, HANDSHAKE_MSG):
 		self._online = False
 		self._PORT = PORT
 		self._HOSTNAME = socket.gethostname()
 		self._HOSTADDRESS = socket.gethostbyname(self._HOSTNAME)
 		self._ADDR = (self._HOSTADDRESS, self._PORT)
-		self._HEADER = HEADER
 		self._FORMAT = FORMAT
 		self._DISCONN_MSG = DISCONN_MSG
 		self._HANDSHAKE_MSG = HANDSHAKE_MSG
@@ -59,9 +62,6 @@ class SecureSocket(object):
 			self._conns.remove(conn_to_remove)
 		except:
 			raise Exception(f"Cannot remove {conn_to_remove} from {self._conns}")
-
-	def get_header(self):
-		return self._HEADER
 	
 	def get_format(self):
 		return self._FORMAT
@@ -103,8 +103,8 @@ class Server(SecureSocket):
 
 
 class Client(SecureSocket):
-	def __init__(self, PORT, HEADER, FORMAT, DISCONN_MSG, HANDSHAKE_MSG, TARGET_HOSTADDRESS):
-		super().__init__(PORT, HEADER, FORMAT, DISCONN_MSG, HANDSHAKE_MSG)
+	def __init__(self, PORT, FORMAT, DISCONN_MSG, HANDSHAKE_MSG, TARGET_HOSTADDRESS):
+		super().__init__(PORT, FORMAT, DISCONN_MSG, HANDSHAKE_MSG)
 		self._TARGET_HOSTADDRESS = TARGET_HOSTADDRESS
 		self._TARGET_ADDR = (self._TARGET_HOSTADDRESS, self._PORT)
 		
@@ -154,84 +154,168 @@ class SecureConnection(object):
 
 		while self._connected:
 			try:
-				msg = self._receive()
+				msg = self._receive(self._sock.get_format())
 			except:
 				continue # if we can't receive anymore then that means this connection has shutdown
+
+			if msg == "":
+				continue
 
 			print(f"[{self._addr}] {msg}")
 
 			if msg == self._sock.get_disconn_msg():
 				self._handle_disconn()
 			elif msg == self._sock.get_handshake_msg():
-				self._handle_handshake()
+				if not self._handle_handshake():
+					self.start_disconn(True)
 
-	def _receive(self):
+	def _receive(self, decode_format):
 		print("we are getting a brand new message")
-		encrypted_msg_length_bytes = self._conn.recv(128)
-		print(f"received length of message {encrypted_msg_length_bytes}\n")
-		msg_length_bytes = rsa.decrypt(encrypted_msg_length_bytes, DEFAULT_PRIVATE_KEY)
-		print(f"decrypted length of message {msg_length_bytes}\n")
-		msg_length_text = msg_length_bytes.decode(self._sock.get_format())
+		#encrypted_msg_length_bytes = self._conn.recv(128)
+		#print(f"received length of message {encrypted_msg_length_bytes}\n")
+		#msg_length_bytes = rsa.decrypt(encrypted_msg_length_bytes, DEFAULT_PRIVATE_KEY)
+		#print(f"decrypted length of message {msg_length_bytes}\n")
+		#msg_length_text = msg_length_bytes.decode(self._sock.get_format())
 
-		if not msg_length_text:
-			return ""
-		print(f"message is {msg_length_text} bits long")
-		msg_length = int(msg_length_text)
+		#if not msg_length_text:
+		#	return ""
+		#print(f"message is {msg_length_text} bits long")
+		#msg_length = int(msg_length_text)
 
-		encrypted_message = self._conn.recv(128)
-		print(f"received message {encrypted_message}\n")
-		message = rsa.decrypt(encrypted_message, DEFAULT_PRIVATE_KEY).decode(self._sock.get_format())
+		number_of_chunks_bytes = rsa.decrypt(self._conn.recv(KEYSIZE//8), DEFAULT_PRIVATE_KEY)
+		number_of_chunks = struct.unpack('>I', number_of_chunks_bytes)[0]
+		print(f"there are {number_of_chunks} chunks")
+
+		message_bytes = b''
+
+		for i in range(number_of_chunks):
+			encrypted_chunk = self._conn.recv(KEYSIZE//8)
+			print(f"received message {encrypted_chunk}\n")
+			chunk_bytes = rsa.decrypt(encrypted_chunk, DEFAULT_PRIVATE_KEY)
+			message_bytes += chunk_bytes
+		
+		message = self._decode_from_bytes(message_bytes, decode_format)
 
 		return message
 
 
-	def send(self, msg:str):
+	def send(self, msg, encode_format):
 		if not self._connected:
 			raise Exception("Cannot send as not connected")
 		print(f"sending message: {msg}")
 		
-		message = msg.encode(self._sock.get_format())
-		encrypted_message = rsa.encrypt(message, DEFAULT_PUBLIC_KEY)
-		
-		msg_length = len(encrypted_message)
-		send_length = str(msg_length).encode(self._sock.get_format())
-		send_length += b" " * (self._sock.get_header() - len(send_length))
-		
-		encrypted_send_length = rsa.encrypt(send_length, DEFAULT_PUBLIC_KEY)
+		message = self._encode_to_bytes(msg, encode_format)
 
-		self._conn.send(encrypted_send_length)
-		print(f"sent length {rsa.decrypt(encrypted_send_length, DEFAULT_PRIVATE_KEY)}\n")
-		time.sleep(0.1)
-		self._conn.send(encrypted_message)
-		print(f"sent msg {rsa.decrypt(encrypted_message, DEFAULT_PRIVATE_KEY)}\n")
-		time.sleep(0.1)
+		number_of_chunks = (len(message) // MAXMSGLENGTH) + 1
+		print(f"There are {number_of_chunks} chunks")
+		number_of_chunks_bytes = struct.pack('>I', number_of_chunks)
+		encrypted_number_of_chunks = rsa.encrypt(number_of_chunks_bytes, DEFAULT_PUBLIC_KEY)
+
+		self._conn.send(encrypted_number_of_chunks)
+
+		print("number of chunks sent!")
+		
+		i = 0
+		for chunk in self._byte_chunks(message, MAXMSGLENGTH):
+			print(f"chunk {i}: {chunk}")
+			i += 1
+
+			encrypted_chunk = rsa.encrypt(chunk, DEFAULT_PUBLIC_KEY)
+			
+			self._conn.send(encrypted_chunk)
+			print(f"sent msg {rsa.decrypt(encrypted_chunk, DEFAULT_PRIVATE_KEY)}\n")
+
+
+		#msg_length = len(encrypted_message)
+		#send_length = str(msg_length).encode(self._sock.get_format())
+		#send_length += b" " * (self._sock.get_header() - len(send_length))
+		
+		#encrypted_send_length = rsa.encrypt(send_length, DEFAULT_PUBLIC_KEY)
+
+		#self._conn.send(encrypted_send_length)
+		#print(f"sent length {rsa.decrypt(encrypted_send_length, DEFAULT_PRIVATE_KEY)}\n")
+		#time.sleep(0.1)
+
+
+		
+	def _byte_chunks(self, data_bytes, chunk_length):
+		return (data_bytes[0+i:chunk_length+i] for i in range(0, len(data_bytes), chunk_length))
+
+	def _encode_to_bytes(self, data, encode_format):
+		if encode_format == "pkcs1":
+			return data.save_pkcs1("PEM")
+		else:
+			return data.encode(encode_format)
+
+	def _decode_from_bytes(self, data_bytes, decode_format):
+		if decode_format == "pkcs1":
+			return rsa.PublicKey.load_pkcs1(data_bytes)
+		else:
+			return data_bytes.decode(decode_format)
 
 
 	def _start_handshake(self):
 		try:
-			self.send(self._sock.get_handshake_msg())
+			self.send(self._sock.get_handshake_msg(), self._sock.get_format())
 			print("handshake message sent!")
 			
-			response = self._receive()
+			response = self._receive(self._sock.get_format())
 			print(response)
 			
 			if response != self._sock.get_handshake_msg():
 				return False
 			
-			#self._public_key, self._private_key = rsa.newkeys(1024)
+			new_public_key, new_private_key = rsa.newkeys(KEYSIZE) # we create new keys in temporary vars because we need to exchange them before we start using them
 
+			self.send(new_public_key, "pkcs1")
+
+			new_recipient_public_key = self._receive("pkcs1")
+
+			self._public_key, self._private_key, self._recipient_public_key = new_public_key, new_private_key, new_recipient_public_key
 			
+
+			# redo handshake message again with new keys to make sure exchange was successful
+			self.send(self._sock.get_handshake_msg(), self._sock.get_format())
+			print("handshake message sent!")
+			
+			response = self._receive(self._sock.get_format())
+			print(response)
+			
+			if response != self._sock.get_handshake_msg():
+				return False
+
 			return True
 		except Exception as e:
 			print(f"Handshake failed: {e}")
 			return False
 
 	def _handle_handshake(self):
-		self.send(self._sock.get_handshake_msg())
+		try:
+			self.send(self._sock.get_handshake_msg(), self._sock.get_format())
+
+			new_public_key, new_private_key = rsa.newkeys(KEYSIZE) # we create new keys in temporary vars because we need to exchange them before we start using them
+
+			new_recipient_public_key = self._receive("pkcs1")
+			self.send(new_public_key, "pkcs1")
+
+			self._public_key, self._private_key, self._recipient_public_key = new_public_key, new_private_key, new_recipient_public_key
+
+			response = self._receive(self._sock.get_format())
+			print(response)
+			
+			if response != self._sock.get_handshake_msg():
+				return False
+			self.send(self._sock.get_handshake_msg(), self._sock.get_format())
+
+		except Exception as e:
+			print(f"Handshake failed: {e}")
+			return False
+		return True
+
 
 	def start_disconn(self, removeconnfromsock:bool): # runs if we initiated the disconn
 		print("we ended the connection")
-		self.send(self._sock.get_disconn_msg())
+		self.send(self._sock.get_disconn_msg(), self._sock.get_format())
 		self._disconn(removeconnfromsock)
 
 	def _handle_disconn(self): # runs if the disconn was initiated by the other side
