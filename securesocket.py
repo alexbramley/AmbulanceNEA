@@ -170,7 +170,7 @@ class SecureConnection(object):
 					self.start_disconn(True)
 
 	def _receive(self, decode_format):
-		print("we are getting a brand new message")
+		#print("we are getting a brand new message")
 		#encrypted_msg_length_bytes = self._conn.recv(128)
 		#print(f"received length of message {encrypted_msg_length_bytes}\n")
 		#msg_length_bytes = rsa.decrypt(encrypted_msg_length_bytes, DEFAULT_PRIVATE_KEY)
@@ -184,13 +184,13 @@ class SecureConnection(object):
 
 		number_of_chunks_bytes = rsa.decrypt(self._conn.recv(KEYSIZE//8), self._private_key)
 		number_of_chunks = struct.unpack('>I', number_of_chunks_bytes)[0]
-		print(f"there are {number_of_chunks} chunks")
+		#print(f"there are {number_of_chunks} chunks")
 
 		message_bytes = b''
 
 		for i in range(number_of_chunks):
 			encrypted_chunk = self._conn.recv(KEYSIZE//8)
-			print(f"received message {encrypted_chunk}\n")
+			#print(f"received message {encrypted_chunk}\n")
 			chunk_bytes = rsa.decrypt(encrypted_chunk, self._private_key)
 			message_bytes += chunk_bytes
 		
@@ -202,22 +202,22 @@ class SecureConnection(object):
 	def send(self, msg, encode_format):
 		if not self._connected:
 			raise Exception("Cannot send as not connected")
-		print(f"sending message: {msg}")
+		#print(f"sending message: {msg}")
 		
 		message = self._encode_to_bytes(msg, encode_format)
 
 		number_of_chunks = (len(message) // MAXMSGLENGTH) + 1
-		print(f"There are {number_of_chunks} chunks")
+		#print(f"There are {number_of_chunks} chunks")
 		number_of_chunks_bytes = struct.pack('>I', number_of_chunks)
 		encrypted_number_of_chunks = rsa.encrypt(number_of_chunks_bytes, self._recipient_public_key)
 
 		self._conn.send(encrypted_number_of_chunks)
 
-		print("number of chunks sent!")
+		#print("number of chunks sent!")
 		
 		i = 0
 		for chunk in self._byte_chunks(message, MAXMSGLENGTH):
-			print(f"chunk {i}: {chunk}")
+			#print(f"chunk {i}: {chunk}")
 			i += 1
 
 			encrypted_chunk = rsa.encrypt(chunk, self._recipient_public_key)

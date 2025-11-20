@@ -1,0 +1,2 @@
+class entity(object):
+    pass
