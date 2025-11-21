@@ -133,6 +133,8 @@ class SecureConnection(object):
 		self._conn = conn
 		self._addr = addr
 		self._connected = False
+		self._handshaked = False
+		self._most_recent_message = ""
 
 		
 
@@ -148,7 +150,9 @@ class SecureConnection(object):
 		self._connected = True
 
 		if type(self._sock) == Server:
-			if not self._start_handshake():
+			if self._start_handshake():
+				self._handshaked = True
+			else:
 				self.start_disconn(True)
 
 
@@ -166,8 +170,12 @@ class SecureConnection(object):
 			if msg == self._sock.get_disconn_msg():
 				self._handle_disconn()
 			elif msg == self._sock.get_handshake_msg():
-				if not self._handle_handshake():
+				if self._handle_handshake():
+					self._handshaked = True
+				else:
 					self.start_disconn(True)
+			else:
+				self._most_recent_message = msg
 
 	def _receive(self, decode_format):
 		#print("we are getting a brand new message")
@@ -199,10 +207,16 @@ class SecureConnection(object):
 		return message
 
 
-	def send(self, msg, encode_format):
+	def send(self, msg):
+		if self._handshaked:
+			self._raw_send(msg, "utf-8")
+		else:
+			Exception("Cannot send as handshake incomplete")
+
+	def _raw_send(self, msg, encode_format):
 		if not self._connected:
-			raise Exception("Cannot send as not connected")
-		#print(f"sending message: {msg}")
+			raise Exception("Cannot _raw_send as not connected")
+		#print(f"_raw_sending message: {msg}")
 		
 		message = self._encode_to_bytes(msg, encode_format)
 
@@ -226,13 +240,13 @@ class SecureConnection(object):
 
 
 		#msg_length = len(encrypted_message)
-		#send_length = str(msg_length).encode(self._sock.get_format())
-		#send_length += b" " * (self._sock.get_header() - len(send_length))
+		#_raw_send_length = str(msg_length).encode(self._sock.get_format())
+		#_raw_send_length += b" " * (self._sock.get_header() - len(_raw_send_length))
 		
-		#encrypted_send_length = rsa.encrypt(send_length, DEFAULT_PUBLIC_KEY)
+		#encrypted__raw_send_length = rsa.encrypt(_raw_send_length, DEFAULT_PUBLIC_KEY)
 
-		#self._conn.send(encrypted_send_length)
-		#print(f"sent length {rsa.decrypt(encrypted_send_length, DEFAULT_PRIVATE_KEY)}\n")
+		#self._conn._raw_send(encrypted__raw_send_length)
+		#print(f"sent length {rsa.decrypt(encrypted__raw_send_length, DEFAULT_PRIVATE_KEY)}\n")
 		#time.sleep(0.1)
 
 
@@ -255,7 +269,7 @@ class SecureConnection(object):
 
 	def _start_handshake(self):
 		try:
-			self.send(self._sock.get_handshake_msg(), self._sock.get_format())
+			self._raw_send(self._sock.get_handshake_msg(), self._sock.get_format())
 			print("handshake message sent!")
 			
 			response = self._receive(self._sock.get_format())
@@ -266,7 +280,7 @@ class SecureConnection(object):
 			
 			new_public_key, new_private_key = rsa.newkeys(KEYSIZE) # we create new keys in temporary vars because we need to exchange them before we start using them
 
-			self.send(new_public_key, "pkcs1")
+			self._raw_send(new_public_key, "pkcs1")
 
 			new_recipient_public_key = self._receive("pkcs1")
 
@@ -274,7 +288,7 @@ class SecureConnection(object):
 			
 
 			# redo handshake message again with new keys to make sure exchange was successful
-			self.send(self._sock.get_handshake_msg(), self._sock.get_format())
+			self._raw_send(self._sock.get_handshake_msg(), self._sock.get_format())
 			print("handshake message sent!")
 			
 			response = self._receive(self._sock.get_format())
@@ -290,12 +304,12 @@ class SecureConnection(object):
 
 	def _handle_handshake(self):
 		try:
-			self.send(self._sock.get_handshake_msg(), self._sock.get_format())
+			self._raw_send(self._sock.get_handshake_msg(), self._sock.get_format())
 
 			new_public_key, new_private_key = rsa.newkeys(KEYSIZE) # we create new keys in temporary vars because we need to exchange them before we start using them
 
 			new_recipient_public_key = self._receive("pkcs1")
-			self.send(new_public_key, "pkcs1")
+			self._raw_send(new_public_key, "pkcs1")
 
 			self._public_key, self._private_key, self._recipient_public_key = new_public_key, new_private_key, new_recipient_public_key
 
@@ -304,7 +318,7 @@ class SecureConnection(object):
 			
 			if response != self._sock.get_handshake_msg():
 				return False
-			self.send(self._sock.get_handshake_msg(), self._sock.get_format())
+			self._raw_send(self._sock.get_handshake_msg(), self._sock.get_format())
 
 		except Exception as e:
 			print(f"Handshake failed: {e}")
@@ -314,7 +328,7 @@ class SecureConnection(object):
 
 	def start_disconn(self, removeconnfromsock:bool): # runs if we initiated the disconn
 		print("we ended the connection")
-		self.send(self._sock.get_disconn_msg(), self._sock.get_format())
+		self._raw_send(self._sock.get_disconn_msg(), self._sock.get_format())
 		self._disconn(removeconnfromsock)
 
 	def _handle_disconn(self): # runs if the disconn was initiated by the other side
