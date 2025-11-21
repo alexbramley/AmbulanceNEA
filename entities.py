@@ -1,2 +1,5 @@
+import vectors
+
 class entity(object):
-    pass
+    def __init__(self, position:vectors.Vector2):
+        self.position = position
