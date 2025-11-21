@@ -10,6 +10,9 @@ __pycache__/
 *.log
 *.env
 
+# keys
+*.pem
+
 # OS-specific junk
 .DS_Store
 Thumbs.db
