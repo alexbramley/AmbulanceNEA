@@ -98,7 +98,10 @@ class Server(SecureSocket):
 			self._conns.append(SecureConnection(self, conn, addr))
 			print(f"[ACTIVE CONNECTIONS] {len(self._conns)}")
 
-
+	def get_conns(self):
+		if len(self._conns) == 0:
+			raise Exception("There are no active connections")
+		return self._conns
 
 
 
@@ -152,6 +155,7 @@ class SecureConnection(object):
 		if type(self._sock) == Server:
 			if self._start_handshake():
 				self._handshaked = True
+				print("Handshake completed successfully")
 			else:
 				self.start_disconn(True)
 
@@ -172,10 +176,18 @@ class SecureConnection(object):
 			elif msg == self._sock.get_handshake_msg():
 				if self._handle_handshake():
 					self._handshaked = True
+					print("Handshake completed successfully")
 				else:
 					self.start_disconn(True)
 			else:
 				self._most_recent_message = msg
+
+				if type(self._sock) == Server:
+					for conn in self._sock.get_conns():
+						conn.send(self._most_recent_message)
+
+	def get_most_recent_message(self):
+		return self._most_recent_message
 
 	def _receive(self, decode_format):
 		#print("we are getting a brand new message")
@@ -211,7 +223,7 @@ class SecureConnection(object):
 		if self._handshaked:
 			self._raw_send(msg, "utf-8")
 		else:
-			Exception("Cannot send as handshake incomplete")
+			raise Exception("Cannot send as handshake incomplete")
 
 	def _raw_send(self, msg, encode_format):
 		if not self._connected:
