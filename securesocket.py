@@ -356,3 +356,4 @@ class SecureConnection(object):
 		self._conn.close()
 		if removeconnfromsock:
 			self._sock.remove_conn(self)
+			
