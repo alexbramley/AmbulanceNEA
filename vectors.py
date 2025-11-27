@@ -25,4 +25,3 @@ class Vector2(object):
         magnitude = Vector2.Magnitude(vector_operand)
         return Vector2(vector_operand.x / magnitude, vector_operand.y / magnitude)
     
-print(Vector2.Add(Vector2(6,7), Vector2(4,5)))
