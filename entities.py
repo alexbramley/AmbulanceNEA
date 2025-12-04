@@ -11,31 +11,48 @@ class EntityManager:
     _entities = []
     _secure_connection = None
     _newest_conn_msg = ""
+    master_thread = None
+    _master_active = False
 
     @classmethod
     def _master(cls):
-        while True:
+        print("Starting master EntityManager thread...")
+        while cls._master_active:
             if cls._secure_connection != None:
                 new_conn_msg = cls._secure_connection.get_most_recent_message()
                 if cls._newest_conn_msg != new_conn_msg:
                     cls._newest_conn_msg = new_conn_msg
+                    cls._handle_conn_msg(cls._newest_conn_msg)
 
-    _master_thread = threading.Thread(target=_master)
-    _master_thread.start()
+    @staticmethod
+    def start_master():
+        EntityManager.master_thread = threading.Thread(target=EntityManager._master)
+        EntityManager.master_thread.start()
+        _master_active = True
+
+    @staticmethod
+    def end_master():
+        _master_active = False
+        if EntityManager.master_thread != None:
+            EntityManager.master_thread.join()
 
     @classmethod
     def _handle_conn_msg(cls, message):
         """Gets triggered when we get a new message"""
-        if message[0] != "<":
-            print(Exception("No command recognised!!"))
-            return
+        print(f"We got a message!! {message} is the message.")
         
-        command_data, argument_data = cls._parse_message(message, "<", ">", "|")
+        try:
+            command_data, argument_data = cls._parse_message(message, "<", ">", "|")
+            print(f"received command: {command_data[0]}")
+            print(f"receiced data {command_data}, {argument_data}")
+        except Exception as e:
+            print(e)
 
-        print(f"received command: {command_data[0]}")
+        
 
     @classmethod
     def _parse_message(cls, message, start_char, end_char, sep_char):
+        print(f"Parsing {message}")
         letters = list(message)
         if letters.pop(0) != start_char:
             raise Exception("Message has invalid format")
@@ -47,16 +64,19 @@ class EntityManager:
         reading_command_data = True
 
         for letter in letters:
-            if letter == end_char:
-                reading_command_data = False
-            elif letter == sep_char:
+            if letter == sep_char or letter == end_char:
                 if reading_command_data:
                     command_data.append(current_data)
                 else:
                     argument_data.append(current_data)
                 current_data = ""
+                if letter == end_char:
+                    reading_command_data = False
             else:
                 current_data += letter
+        
+        if current_data != "":
+            argument_data.append(current_data)
         
         return command_data, argument_data
 
@@ -148,6 +168,7 @@ time.sleep(0.1)
 
 #my_entity = Entity(vectors.Vector2(0,0), {})
 EntityManager.set_secure_connection(client.get_conn())
+EntityManager.start_master()
 
 msg = ""
 while msg != "stop":
@@ -156,3 +177,4 @@ while msg != "stop":
     msg = input()
 
 EntityManager.disconnect()
+EntityManager.end_master()
