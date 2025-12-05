@@ -123,7 +123,7 @@ print(client)
 time.sleep(0.1)
 
 
-#my_entity = Entity(vectors.Vector2(0,0), {})
+#my_entity = Entity(vectors.Vector2(0,0))
 EntityManager.set_secure_connection(client.get_conn())
 EntityManager.start_master()
 
