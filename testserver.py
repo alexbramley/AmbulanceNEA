@@ -1,5 +1,4 @@
 import entities as en
-import socket
 import securesocket as ss
 import time
 
