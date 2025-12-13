@@ -3,6 +3,8 @@ import socket
 import securesocket as ss
 import time
 
+
+
 client = ss.Client(42067, "utf-8", "!DISCONN", "!HANDSHAKE", socket.gethostbyname(socket.gethostname()))
 client.set_socket_status(True)
 print(client)
@@ -12,6 +14,10 @@ time.sleep(0.1)
 
 #my_entity = Entity(vectors.Vector2(0,0))
 my_conn_manager = en.ConnectionManager()
+my_entity_manager = en.EntityManager()
+
+en.SuperManager.setup(False, my_conn_manager, my_entity_manager)
+
 my_conn_manager.set_secure_connection(client.get_conn())
 my_conn_manager.start_master()
 

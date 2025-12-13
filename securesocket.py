@@ -182,9 +182,10 @@ class SecureConnection(object):
 			else:
 				self._most_recent_message = msg
 
-				if type(self._sock) == Server:
-					for conn in self._sock.get_conns():
-						conn.send(self._most_recent_message)
+				# no longer need to broadcast message to everyone from here, this is done on a higher level now
+				# if type(self._sock) == Server:
+				# 	for conn in self._sock.get_conns():
+				# 		conn.send(self._most_recent_message)
 
 	def get_most_recent_message(self):
 		return self._most_recent_message

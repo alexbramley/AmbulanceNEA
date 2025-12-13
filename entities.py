@@ -4,6 +4,29 @@ import threading
 import time
 import socket
 
+class SuperManager:
+    """Contains references to all managers that there should be one of per client or server"""
+
+    @classmethod
+    def setup(cls, is_server, server_or_connection_manager, entity_manager):
+        cls._is_server = is_server
+        if is_server:
+            cls._server_manager = server_or_connection_manager
+        else:
+            cls._connection_manager = server_or_connection_manager
+        cls._entity_manager = entity_manager
+
+    @classmethod
+    def get_is_server(cls):
+        return cls._is_server
+
+    @classmethod
+    def get_entity_manager(cls):
+        return cls._entity_manager
+    
+    @classmethod
+    def get_server_manager(cls):
+        return cls._server_manager
 
 
 class ConnectionManager(object):
@@ -14,7 +37,6 @@ class ConnectionManager(object):
         self._master_active = False
         self._newest_conn_command_data = []
         self._newest_conn_argument_data = []
-        self.new_message_flag = False
 
     
     def _master(self):
@@ -26,7 +48,8 @@ class ConnectionManager(object):
                     print("we got a brand new message")
                     self._newest_conn_msg = new_conn_msg
                     self._newest_conn_command_data, self._newest_conn_argument_data = self._handle_conn_msg(self._newest_conn_msg)
-                    self.new_message_flag = True
+                    if SuperManager.get_is_server() == True:
+                        SuperManager.get_server_manager().handle_connection_message(self, self._newest_conn_msg, self._newest_conn_command_data, self._newest_conn_argument_data)
 
     
     def start_master(self):
@@ -86,8 +109,10 @@ class ConnectionManager(object):
     def send_socket_message(self, message):
         if self._secure_connection == None:
             return Exception("No secure_connection object to send with")
-        self._secure_connection.send(message)
-
+        try:
+            self._secure_connection.send(message)
+        except Exception as e:
+            print(f"Failed to send message, there was en exception:\n{e}")
     
     def disconnect(self):
         if self._secure_connection != None:
@@ -101,12 +126,10 @@ class ConnectionManager(object):
         return self._secure_connection
     
     def get_newest_message(self):
-        self.new_message_flag = False
         return self._newest_conn_msg
 
 
     def get_newest_message_data(self):
-        self.new_message_flag = False
         return self._newest_conn_command_data, self._newest_conn_argument_data
     
 class ServerManager(object):
@@ -120,13 +143,12 @@ class ServerManager(object):
     def _master(self):
         while self._master_active:
             self._refresh_conns()
-            for conn_manager in self._conn_managers:
-                if conn_manager.new_message_flag == True:
-                    message_to_broadcast = conn_manager.get_newest_message()
-                    for recipient_conn_manager in self._conn_managers:
-                        recipient_conn_manager.send_socket_message(message_to_broadcast)
 
-    
+    def handle_connection_message(self, connection_manager, new_message, new_command_data, new_argument_data):
+        for recipient_conn_manager in self._conn_managers:
+            recipient_conn_manager.send_socket_message(new_message)
+
+
     def _refresh_conns(self):
         """makes sure self._conn_managers is up to date with the latest conns on the server"""
         try:
@@ -181,7 +203,32 @@ class ServerManager(object):
         self._server.set_socket_status(False)
 
 
+class EntityManager(object):
+    def __init__(self):
+        self._entites = []
+
+    def add_new_entity(self, entity_id, position):
+        new_entity = Entity(entity_id, position)
+
+    def get_entity_by_id(self, entity_id):
+        for entity in self._entites:
+            if entity.get_id() == entity_id:
+                return entity
+        raise Exception(f"No entity found with id: {entity_id}")
+
+    def remove_entity(self, entity_to_remove):
+        for entity in self._entites:
+            if entity == entity_to_remove:
+                self._entites.remove(entity)
+                return
+        raise Exception(f"No such entity found")
+
+
 class Entity(object):
-    def __init__(self, position:vectors.Vector2):
+    def __init__(self, entity_id, position:vectors.Vector2):
+        self._id = entity_id
         self.position = position
+
+    def get_id(self):
+        return self._id
 

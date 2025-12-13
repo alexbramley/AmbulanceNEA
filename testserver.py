@@ -10,6 +10,10 @@ time.sleep(0.1)
 
 
 my_server_manager = en.ServerManager()
+my_entity_manager = en.EntityManager()
+
+en.SuperManager.setup(True, my_server_manager, my_entity_manager)
+
 my_server_manager.set_server(server)
 my_server_manager.start_master()
 
