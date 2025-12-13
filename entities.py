@@ -50,7 +50,8 @@ class ConnectionManager(object):
                     self._newest_conn_command_data, self._newest_conn_argument_data = self._handle_conn_msg(self._newest_conn_msg)
                     if SuperManager.get_is_server() == True:
                         SuperManager.get_server_manager().handle_connection_message(self, self._newest_conn_msg, self._newest_conn_command_data, self._newest_conn_argument_data)
-
+                    
+                    
     
     def start_master(self):
         self._master_active = True
@@ -70,6 +71,9 @@ class ConnectionManager(object):
             command_data, argument_data = self._parse_message(message, "<", ">", "|")
             print(f"received command: {command_data[0]}")
             print(f"receiced data {command_data}, {argument_data}")
+
+            SuperManager.get_entity_manager().handle_command(command_data, argument_data)
+            
             return (command_data, argument_data)
         except Exception as e:
             print("The message wasn't in a valid format")
@@ -208,13 +212,26 @@ class EntityManager(object):
         self._entites = []
 
     def add_new_entity(self, entity_id, position):
-        new_entity = Entity(entity_id, position)
+        if not self.check_entity_exists_by_id(entity_id):
+            new_entity = Entity(entity_id, position)
+            self._entites.append(new_entity)
+        else:
+            raise Exception("Cannot add entity as there is already an entity with that id.")
 
     def get_entity_by_id(self, entity_id):
         for entity in self._entites:
             if entity.get_id() == entity_id:
                 return entity
         raise Exception(f"No entity found with id: {entity_id}")
+    
+    def check_entity_exists_by_id(self, entity_id):
+        try:
+            self.get_entity_by_id(entity_id)
+            entity_already_exists = True
+        except:
+            entity_already_exists = False
+
+        return entity_already_exists
 
     def remove_entity(self, entity_to_remove):
         for entity in self._entites:
@@ -222,9 +239,29 @@ class EntityManager(object):
                 self._entites.remove(entity)
                 return
         raise Exception(f"No such entity found")
+    
+    def get_entites(self):
+        return self._entites
+    
+    def display_entites(self):
+        for entity in self.get_entites():
+            print(entity)
+    
+    def handle_command(self, command_data, argument_data):
+        if command_data[0] == "CREATE_ENTITY":
+            self.add_new_entity(int(argument_data[0]), vectors.Vector2(float(argument_data[1]), float(argument_data[2]))) # argument_data: [0]=id, [1]=xpos, [2]=ypos
+            print("we added a new entity")
+        elif command_data[0] == "DISPLAY_ENTITIES":
+            self.display_entites()
+        else:
+            print(f"That command keyword, {command_data[0]}, is invalid")
 
 
 class Entity(object):
+    def __repr__(self):
+        return f"Entity object with id {self._id} at position {self.position}"
+    
+
     def __init__(self, entity_id, position:vectors.Vector2):
         self._id = entity_id
         self.position = position
