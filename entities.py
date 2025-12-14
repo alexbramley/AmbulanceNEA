@@ -211,14 +211,20 @@ class EntityManager(object):
     def __init__(self):
         self._entites = []
 
-    def add_new_entity(self, entity_id, position):
+    def add_new_entity(self, entity_id, entity_type, position):
         if not self.check_entity_exists_by_id(entity_id):
-            new_entity = Entity(entity_id, position)
+            if entity_type == "entity":
+                new_entity = Entity(entity_id, position)
+            elif entity_type == "ambulance":
+                new_entity = Ambulance(entity_id, position)
+            else:
+                raise Exception("Entity type invalid!")
+
             self._entites.append(new_entity)
         else:
             raise Exception("Cannot add entity as there is already an entity with that id.")
 
-    def get_entity_by_id(self, entity_id):
+    def get_entity_by_id(self, entity_id:int):
         for entity in self._entites:
             if entity.get_id() == entity_id:
                 return entity
@@ -248,24 +254,35 @@ class EntityManager(object):
             print(entity)
     
     def handle_command(self, command_data, argument_data):
-        if command_data[0] == "CREATE_ENTITY":
-            self.add_new_entity(int(argument_data[0]), vectors.Vector2(float(argument_data[1]), float(argument_data[2]))) # argument_data: [0]=id, [1]=xpos, [2]=ypos
-            print("we added a new entity")
-        elif command_data[0] == "DISPLAY_ENTITIES":
-            self.display_entites()
-        else:
-            print(f"That command keyword, {command_data[0]}, is invalid")
-
+        try:
+            if command_data[0] == "CREATE_ENTITY":
+                self.add_new_entity(int(argument_data[0]), command_data[1], vectors.Vector2(float(argument_data[1]), float(argument_data[2]))) # command_data: [1]=entitytype argument_data: [0]=id, [1]=xpos, [2]=ypos
+                print("we added a new entity")
+            elif command_data[0] == "DISPLAY_ENTITIES":
+                self.display_entites()
+            elif command_data[0] == "UPDATE_ENTITY_POSITION":
+                self.get_entity_by_id(int(argument_data[0])).update_position(float(argument_data[1]), float(argument_data[2])) # argument_data: [0]=id, [1]=xpos, [2]=ypos
+            elif command_data[0] == "REMOVE_ENTITY":
+                self.remove_entity(self.get_entity_by_id(int(argument_data[0]))) # argument_data: [0]=id
+            else:
+                print(f"That command keyword, {command_data[0]}, is invalid")
+        except Exception as e:
+            print(e)
 
 class Entity(object):
     def __repr__(self):
-        return f"Entity object with id {self._id} at position {self.position}"
+        return f"entity object with id {self._id} at position {self.position}"
     
-
     def __init__(self, entity_id, position:vectors.Vector2):
         self._id = entity_id
         self.position = position
 
     def get_id(self):
         return self._id
+    
+    def update_position(self, new_position:vectors.Vector2):
+        self.position = new_position
 
+class Ambulance(Entity):
+    def __repr__(self):
+        return "Ambulance "+super().__repr__()

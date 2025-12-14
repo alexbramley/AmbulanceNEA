@@ -1,6 +1,9 @@
 # Python virtual environment
 .venv/
 
+# vscode files
+.vscode/
+
 # Byte-compiled / cache files
 __pycache__/
 *.py[cod]
@@ -13,6 +16,6 @@ __pycache__/
 # keys
 *.pem
 
-# OS-specific junk
+# OS-specific stuff
 .DS_Store
 Thumbs.db
