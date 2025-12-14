@@ -19,6 +19,7 @@ MAXMSGLENGTH = 117
 print(rsa.decrypt(rsa.encrypt("test message".encode("utf-8"), DEFAULT_PUBLIC_KEY), DEFAULT_PRIVATE_KEY).decode("utf-8"))
 
 class SecureSocket(object):
+	"""Base class for a client or server, handles initial connection"""
 	def __repr__(self):
 		return f"SecureSocket object    hostadress: {self._HOSTADDRESS}    hostname: {self._HOSTNAME}    port: {self._PORT}"
 	
@@ -35,11 +36,13 @@ class SecureSocket(object):
 		self._master_thread = threading.Thread(target=self._master)
 		
 	def _setup_master_conn(self):
+		"""Initialises values for connection setup"""
 		self.conns = []
 		self._master_conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		
 
 	def set_socket_status(self, online:bool):
+		"""Handles when the socket is set to be offline or online, such as disonnecting and resetting"""
 		self._online = online
 		if online:
 			self._setup_master_conn()
@@ -54,11 +57,13 @@ class SecureSocket(object):
 
 
 	def _master(self):
+		"""The main loop which handles creating new SecureConnection objects"""
 		print(f"[STARTING] master is starting...")
 		
 	
 	
 	def remove_conn(self, conn_to_remove):
+		"""Handles removing a SecureConnection"""
 		try:
 			self._conns.remove(conn_to_remove)
 		except:
@@ -75,6 +80,7 @@ class SecureSocket(object):
 	
 
 class Server(SecureSocket):
+	"""Server object, creates connections with clients"""
 	def _setup_master_conn(self):
 		super()._setup_master_conn()
 		self._master_conn.bind(self._ADDR)
@@ -107,6 +113,7 @@ class Server(SecureSocket):
 
 
 class Client(SecureSocket):
+	"""Client object, creates connection with server"""
 	def __init__(self, PORT, FORMAT, DISCONN_MSG, HANDSHAKE_MSG, TARGET_HOSTADDRESS):
 		super().__init__(PORT, FORMAT, DISCONN_MSG, HANDSHAKE_MSG)
 		self._TARGET_HOSTADDRESS = TARGET_HOSTADDRESS
@@ -132,6 +139,7 @@ class Client(SecureSocket):
 
 
 class SecureConnection(object):
+	"""Connection object, allows for sending and receiving messages over an encrypted channel"""
 	def __init__(self, sock:SecureSocket, conn:socket.socket, addr):
 		self._sock = sock
 		self._conn = conn
@@ -153,6 +161,7 @@ class SecureConnection(object):
 		self._conn_thread.start()
 
 	def _handle_conn(self):
+		"""The main loop which handles incoming traffic"""
 		print(f"[NEW CONNECTION] {self._addr} connected.")
 		self._connected = True
 
@@ -203,6 +212,7 @@ class SecureConnection(object):
 
 
 	def _handle_sending(self):
+		"""Loop which handles transmission of data waiting in the queue"""
 		while self._handshaked and self._connected:
 			### HANDLES SENDING MESSAGES FROM THE SEND QUEUE ###
 
@@ -216,6 +226,7 @@ class SecureConnection(object):
 		return self._most_recent_message
 
 	def _receive(self, decode_format):
+		"""Receives a secure method from the connection, which has been send by the other side's _raw_send method"""
 		#print("we are getting a brand new message")
 		#encrypted_msg_length_bytes = self._conn.recv(128)
 		#print(f"received length of message {encrypted_msg_length_bytes}\n")
@@ -275,7 +286,7 @@ class SecureConnection(object):
 			raise Exception("Cannot send as handshake incomplete")
 
 	def _raw_send(self, msg, encode_format):
-
+		"""Sends an encrypted message, to be received by the other side's _receive method"""
 		if not self._connected:
 			raise Exception("Cannot _raw_send as not connected")
 		#print(f"_raw_sending message: {msg}")
@@ -331,15 +342,18 @@ class SecureConnection(object):
 
 		
 	def _byte_chunks(self, data_bytes, chunk_length):
+		"""Splits a string of byte data into a series of fixed length chunks"""
 		return (data_bytes[0+i:chunk_length+i] for i in range(0, len(data_bytes), chunk_length))
 
 	def _encode_to_bytes(self, data, encode_format):
+		"""Encodes some data into the given format"""
 		if encode_format == "pkcs1":
 			return data.save_pkcs1("PEM")
 		else:
 			return data.encode(encode_format)
 
 	def _decode_from_bytes(self, data_bytes, decode_format):
+		"""Decodes byte data from a given format"""
 		if decode_format == "pkcs1":
 			return rsa.PublicKey.load_pkcs1(data_bytes)
 		else:
@@ -347,6 +361,7 @@ class SecureConnection(object):
 
 
 	def _start_handshake(self):
+		"""Begins a handshake, which confirms communication across the connection and creates new rsa keys to use"""
 		try:
 			self._raw_send(self._sock.get_handshake_msg(), self._sock.get_format())
 			print("handshake message sent!")
@@ -383,6 +398,7 @@ class SecureConnection(object):
 			return False
 
 	def _handle_handshake(self):
+		"""Responds if the other side executes _start_handshake"""
 		try:
 			self._raw_send(self._sock.get_handshake_msg(), self._sock.get_format())
 
@@ -408,15 +424,18 @@ class SecureConnection(object):
 
 
 	def start_disconn(self, removeconnfromsock:bool): # runs if we initiated the disconn
+		"""Begins a disconnection of the conn by informing the other side"""
 		print("we ended the connection")
 		self._raw_send(self._sock.get_disconn_msg(), self._sock.get_format())
 		self._disconn(removeconnfromsock)
 
 	def _handle_disconn(self): # runs if the disconn was initiated by the other side
+		"""Handles when the other side runs start_disconn"""
 		print("they ended the connection")
 		self._disconn(True)
 
 	def _disconn(self, removeconnfromsock:bool): # removeconnfromsock should usually be true, as after a conn has been disconned, it should no longer be in the list of conns on the sock obj, but for example if conns in the sock are being iterated through to be disconned, we shouldn't remove an item from the list that's being iterated through
+		"""Disconnects the connection and optionally removes the SecureConnection object from Client or Server object"""
 		try:
 			self._conn.shutdown(socket.SHUT_RDWR)
 		except:

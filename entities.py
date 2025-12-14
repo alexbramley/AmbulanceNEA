@@ -9,6 +9,7 @@ class SuperManager:
 
     @classmethod
     def setup(cls, is_server, server_or_connection_manager, entity_manager):
+        """Sets the values for the managers that this holds references to"""
         cls._is_server = is_server
         if is_server:
             cls._server_manager = server_or_connection_manager
@@ -30,6 +31,7 @@ class SuperManager:
 
 
 class ConnectionManager(object):
+    """Handles a connection on a higher level than securesocket.SecureConnection"""
     def __init__(self):
         self._secure_connection = None
         self._newest_conn_msg = ""
@@ -40,6 +42,7 @@ class ConnectionManager(object):
 
     
     def _master(self):
+        """The main loop of handling new messages from the connection"""
         print("Starting master ConnectionManager thread...")
         while self._master_active:
             if self._secure_connection != None:
@@ -54,17 +57,20 @@ class ConnectionManager(object):
                     
     
     def start_master(self):
+        """Starts the master loop"""
         self._master_active = True
         self.master_thread = threading.Thread(target=self._master)
         self.master_thread.start()
 
     def end_master(self):
+        """Ends the master loop"""
         self._master_active = False
+        self.disconnect()
         if self.master_thread != None:
             self.master_thread.join()
 
     def _handle_conn_msg(self, message):
-        """Gets triggered when we get a new message"""
+        """Gets triggered when we get a new message, decodes and executes the message command"""
         print(f"We got a message!! {message} is the message.")
         
         try:
@@ -81,6 +87,7 @@ class ConnectionManager(object):
 
 
     def _parse_message(self, message, start_char, end_char, sep_char):
+        """Decodes the message's command"""
         print(f"Parsing {message}")
         letters = list(message)
         if letters.pop(0) != start_char:
@@ -111,6 +118,7 @@ class ConnectionManager(object):
 
 
     def send_socket_message(self, message):
+        """Sends a message throught the SecureConnection object"""
         if self._secure_connection == None:
             return Exception("No secure_connection object to send with")
         try:
@@ -120,6 +128,7 @@ class ConnectionManager(object):
             print(f"Failed to send message, there was en exception:\n{e}")
     
     def disconnect(self):
+        """Starts a disconnect on the SecureConnection object"""
         if self._secure_connection != None:
             self._secure_connection._sock.set_socket_status(False)
 
@@ -133,11 +142,11 @@ class ConnectionManager(object):
     def get_newest_message(self):
         return self._newest_conn_msg
 
-
     def get_newest_message_data(self):
         return self._newest_conn_command_data, self._newest_conn_argument_data
     
 class ServerManager(object):
+    """Handles creating ConnectionManager objects and also broadcasting messages where relevant"""
     def __init__(self):
         self._server:ss.Server
         self._conn_managers = []
@@ -147,17 +156,19 @@ class ServerManager(object):
         self._previous_messages = [] # a list of all previous broadcasted messages
 
     def _master(self):
+        """Main loop"""
         while self._master_active:
             self._refresh_conns()
 
     def handle_connection_message(self, connection_manager, new_message, new_command_data, new_argument_data):
+        """Broadcasts messages to all clients when a message is received"""
         self._previous_messages.append(new_message)
         for recipient_conn_manager in self._conn_managers:
             recipient_conn_manager.send_socket_message(new_message)
 
 
     def _refresh_conns(self):
-        """makes sure self._conn_managers is up to date with the latest conns on the server"""
+        """Makes sure self._conn_managers is up to date with the latest conns on the SecureSocket.Server"""
         try:
             server_conns = self._server.get_conns()
         except:
@@ -199,24 +210,31 @@ class ServerManager(object):
 
 
     def start_master(self):
+        """Starts the master loop"""
         self._master_active = True
         self.master_thread = threading.Thread(target=self._master)
         self.master_thread.start()
 
     def end_master(self):
+        """Ends the master loop"""
         self._master_active = False
         if self.master_thread != None:
             self.master_thread.join()
 
     def shutdown_server(self):
+        """Shuts down the server and all its connections"""
+        for connection_manager in self._conn_managers:
+            connection_manager.end_master()
         self._server.set_socket_status(False)
 
 
 class EntityManager(object):
+    """Contains references to all entities and handles creating and updating them based on commands received from the ConnectionManager"""
     def __init__(self):
         self._entites = []
 
     def add_new_entity(self, entity_id, entity_type, position):
+        """Creates a new entity object of a given type"""
         if not self.check_entity_exists_by_id(entity_id):
             if entity_type == "entity":
                 new_entity = Entity(entity_id, position)
@@ -230,12 +248,14 @@ class EntityManager(object):
             raise Exception("Cannot add entity as there is already an entity with that id.")
 
     def get_entity_by_id(self, entity_id:int):
+        """Returns the entity with the corresponding id, by using a linear search""" # TODO: upgrade this to a binary search
         for entity in self._entites:
             if entity.get_id() == entity_id:
                 return entity
         raise Exception(f"No entity found with id: {entity_id}")
     
     def check_entity_exists_by_id(self, entity_id):
+        """Returns true if there is an entity with that id"""
         try:
             self.get_entity_by_id(entity_id)
             entity_already_exists = True
@@ -245,6 +265,7 @@ class EntityManager(object):
         return entity_already_exists
 
     def remove_entity(self, entity_to_remove):
+        """Destroys an entity object"""
         for entity in self._entites:
             if entity == entity_to_remove:
                 self._entites.remove(entity)
@@ -259,6 +280,7 @@ class EntityManager(object):
             print(entity)
     
     def handle_command(self, command_data, argument_data):
+        """Executes the corresponding method to a command received by the ConnnectionManager"""
         try:
             if command_data[0] == "CREATE_ENTITY":
                 self.add_new_entity(int(argument_data[0]), command_data[1], vectors.Vector2(float(argument_data[1]), float(argument_data[2]))) # command_data: [1]=entitytype argument_data: [0]=id, [1]=xpos, [2]=ypos
@@ -275,6 +297,7 @@ class EntityManager(object):
             print(e)
 
 class Entity(object):
+    """Base class for all entities"""
     def __repr__(self):
         return f"entity object with id {self._id} at position {self.position}"
     
@@ -289,5 +312,6 @@ class Entity(object):
         self.position = new_position
 
 class Ambulance(Entity):
+    """Ambulance entity"""
     def __repr__(self):
         return "Ambulance "+super().__repr__()
