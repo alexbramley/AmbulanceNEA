@@ -3,6 +3,7 @@ import threading
 import time
 import rsa
 import struct
+import random
 
 # these keys are used for data transfer during the initial handshake in a connection, before the two parties have exchanged new randomly generated keys
 
@@ -155,10 +156,13 @@ class SecureConnection(object):
 		print(f"[NEW CONNECTION] {self._addr} connected.")
 		self._connected = True
 
+		send_thread = threading.Thread(target=self._handle_sending)
+
 		if type(self._sock) == Server:
 			if self._start_handshake():
 				self._handshaked = True
 				print("Handshake completed successfully")
+				send_thread.start()
 			else:
 				self.start_disconn(True)
 
@@ -181,10 +185,11 @@ class SecureConnection(object):
 
 				if msg == self._sock.get_disconn_msg():
 					self._handle_disconn()
-				elif msg == self._sock.get_handshake_msg():
+				elif msg == self._sock.get_handshake_msg() and not self._handshaked:
 					if self._handle_handshake():
 						self._handshaked = True
 						print("Handshake completed successfully")
+						send_thread.start()
 					else:
 						self.start_disconn(True)
 				else:
@@ -197,6 +202,8 @@ class SecureConnection(object):
 
 
 
+	def _handle_sending(self):
+		while self._handshaked and self._connected:
 			### HANDLES SENDING MESSAGES FROM THE SEND QUEUE ###
 
 			try:
@@ -233,7 +240,18 @@ class SecureConnection(object):
 			chunk_bytes = rsa.decrypt(encrypted_chunk, self._private_key)
 			message_bytes += chunk_bytes
 		
-		message = self._decode_from_bytes(message_bytes, decode_format)
+		split_message_bytes = message_bytes.split(b'RANDOM')
+
+		message = self._decode_from_bytes(split_message_bytes[0], decode_format)
+
+		random_number = struct.unpack(">I", split_message_bytes[1])[0]
+
+		print(f"We received the random number {random_number}")
+
+		# self._conn.send(split_message_bytes[1])
+		#self._conn.send(b'1')
+
+		
 
 		return message
 
@@ -247,19 +265,26 @@ class SecureConnection(object):
 		if self._handshaked:
 			if self._send_queue == []:
 				return # the queue is empty, we've sent everything (base case)
-			message_to_send = self._send_queue.pop(0)
+			time.sleep(0.1) # allow some time for recipient to receive and process the message to avoid overloading them
+			message_to_send = self._send_queue[0]
 			print(f"attempting to send message {message_to_send}")
 			self._raw_send(message_to_send, "utf-8")
+			self._send_queue.pop(0)
 			self._send_items_from_queue()
 		else:
 			raise Exception("Cannot send as handshake incomplete")
 
 	def _raw_send(self, msg, encode_format):
+
 		if not self._connected:
 			raise Exception("Cannot _raw_send as not connected")
 		#print(f"_raw_sending message: {msg}")
+
+		random_number = random.randint(0,1023)
+		print(f"we're sending the random number {random_number}")
+		random_number_bytes = struct.pack(">I",random_number)
 		
-		message = self._encode_to_bytes(msg, encode_format)
+		message = self._encode_to_bytes(msg, encode_format) + b'RANDOM' + random_number_bytes
 
 		number_of_chunks = (len(message) // MAXMSGLENGTH) + 1
 		#print(f"There are {number_of_chunks} chunks")
@@ -288,7 +313,20 @@ class SecureConnection(object):
 
 		#self._conn._raw_send(encrypted__raw_send_length)
 		#print(f"sent length {rsa.decrypt(encrypted__raw_send_length, DEFAULT_PRIVATE_KEY)}\n")
-		#time.sleep(0.1)
+
+
+
+		# try:
+		# 	received_random_number_bytes = self._conn.recv(len(random_number_bytes))
+		# 	received_random_number = struct.unpack(">I", received_random_number_bytes)[0]
+		# 	if received_random_number != random_number:
+		# 		raise Exception(f"Did not receive correct acknowledgement for transmission\nExpected {random_number} but got {received_random_number}")
+		# except Exception as e:
+		# 	print(e)
+			# raise Exception("Did not receive any acknowledgement for transmission")
+
+
+
 
 
 		
@@ -338,8 +376,6 @@ class SecureConnection(object):
 			if response != self._sock.get_handshake_msg():
 				return False
 			
-			self._conn.settimeout(0)
-			self._conn.setblocking(False)
 
 			return True
 		except Exception as e:
@@ -368,22 +404,16 @@ class SecureConnection(object):
 			print(f"Handshake failed: {e}")
 			return False
 		
-		self._conn.settimeout(0)
-		self._conn.setblocking(False)
 		return True
 
 
 	def start_disconn(self, removeconnfromsock:bool): # runs if we initiated the disconn
 		print("we ended the connection")
-		self._conn.settimeout(None)
-		self._conn.setblocking(True)
 		self._raw_send(self._sock.get_disconn_msg(), self._sock.get_format())
 		self._disconn(removeconnfromsock)
 
 	def _handle_disconn(self): # runs if the disconn was initiated by the other side
 		print("they ended the connection")
-		self._conn.settimeout(None)
-		self._conn.setblocking(True)
 		self._disconn(True)
 
 	def _disconn(self, removeconnfromsock:bool): # removeconnfromsock should usually be true, as after a conn has been disconned, it should no longer be in the list of conns on the sock obj, but for example if conns in the sock are being iterated through to be disconned, we shouldn't remove an item from the list that's being iterated through

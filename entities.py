@@ -144,12 +144,14 @@ class ServerManager(object):
         self._master_active = False
         self.master_thread = None
         self._master_active = False
+        self._previous_messages = [] # a list of all previous broadcasted messages
 
     def _master(self):
         while self._master_active:
             self._refresh_conns()
 
     def handle_connection_message(self, connection_manager, new_message, new_command_data, new_argument_data):
+        self._previous_messages.append(new_message)
         for recipient_conn_manager in self._conn_managers:
             recipient_conn_manager.send_socket_message(new_message)
 
@@ -187,6 +189,8 @@ class ServerManager(object):
                 new_conn_manager.set_secure_connection(conn)
                 new_conn_manager.start_master()
                 self._conn_managers.append(new_conn_manager)
+                for message in self._previous_messages:
+                    new_conn_manager.send_socket_message(message)
 
 
     def set_server(self, new_server):
