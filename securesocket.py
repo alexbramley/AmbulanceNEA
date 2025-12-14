@@ -134,10 +134,13 @@ class SecureConnection(object):
 	def __init__(self, sock:SecureSocket, conn:socket.socket, addr):
 		self._sock = sock
 		self._conn = conn
+		self._conn.settimeout(None)
 		self._addr = addr
 		self._connected = False
 		self._handshaked = False
 		self._most_recent_message = ""
+
+		self._send_queue = []
 
 		
 
@@ -161,31 +164,46 @@ class SecureConnection(object):
 
 
 		while self._connected:
+			### HANDLES RECEIVING NEW MESSAGES ###
+			new_message_received = False
+			msg = ""
 			try:
 				msg = self._receive(self._sock.get_format())
+				new_message_received = True
 			except:
-				continue # if we can't receive anymore then that means this connection has shutdown
+				new_message_received = False # if we can't receive anymore then that means this connection has shutdown
 
-			if msg == "":
-				continue
+			if new_message_received:
+				if msg == "":
+					break
 
-			print(f"[{self._addr}] {msg}")
+				print(f"[{self._addr}] {msg}")
 
-			if msg == self._sock.get_disconn_msg():
-				self._handle_disconn()
-			elif msg == self._sock.get_handshake_msg():
-				if self._handle_handshake():
-					self._handshaked = True
-					print("Handshake completed successfully")
+				if msg == self._sock.get_disconn_msg():
+					self._handle_disconn()
+				elif msg == self._sock.get_handshake_msg():
+					if self._handle_handshake():
+						self._handshaked = True
+						print("Handshake completed successfully")
+					else:
+						self.start_disconn(True)
 				else:
-					self.start_disconn(True)
-			else:
-				self._most_recent_message = msg
+					self._most_recent_message = msg
 
 				# no longer need to broadcast message to everyone from here, this is done on a higher level now
 				# if type(self._sock) == Server:
 				# 	for conn in self._sock.get_conns():
 				# 		conn.send(self._most_recent_message)
+
+
+
+			### HANDLES SENDING MESSAGES FROM THE SEND QUEUE ###
+
+			try:
+				self._send_items_from_queue()
+			except Exception as e:
+				print(e)
+
 
 	def get_most_recent_message(self):
 		return self._most_recent_message
@@ -219,10 +237,20 @@ class SecureConnection(object):
 
 		return message
 
+	def add_message_to_send_queue(self, msg):
+		"""This method allows other objects to add a new message to the queue of messages to be sent by this connection"""
+		self._send_queue.append(msg)
+		print(f"we added the message {msg} to the send queue")
 
-	def send(self, msg):
+	def _send_items_from_queue(self):
+		"""Recursive function, sends next item from queue of messages to send, then calls itself. Continues until no more items to send."""
 		if self._handshaked:
-			self._raw_send(msg, "utf-8")
+			if self._send_queue == []:
+				return # the queue is empty, we've sent everything (base case)
+			message_to_send = self._send_queue.pop(0)
+			print(f"attempting to send message {message_to_send}")
+			self._raw_send(message_to_send, "utf-8")
+			self._send_items_from_queue()
 		else:
 			raise Exception("Cannot send as handshake incomplete")
 
@@ -309,6 +337,9 @@ class SecureConnection(object):
 			
 			if response != self._sock.get_handshake_msg():
 				return False
+			
+			self._conn.settimeout(0)
+			self._conn.setblocking(False)
 
 			return True
 		except Exception as e:
@@ -336,16 +367,23 @@ class SecureConnection(object):
 		except Exception as e:
 			print(f"Handshake failed: {e}")
 			return False
+		
+		self._conn.settimeout(0)
+		self._conn.setblocking(False)
 		return True
 
 
 	def start_disconn(self, removeconnfromsock:bool): # runs if we initiated the disconn
 		print("we ended the connection")
+		self._conn.settimeout(None)
+		self._conn.setblocking(True)
 		self._raw_send(self._sock.get_disconn_msg(), self._sock.get_format())
 		self._disconn(removeconnfromsock)
 
 	def _handle_disconn(self): # runs if the disconn was initiated by the other side
 		print("they ended the connection")
+		self._conn.settimeout(None)
+		self._conn.setblocking(True)
 		self._disconn(True)
 
 	def _disconn(self, removeconnfromsock:bool): # removeconnfromsock should usually be true, as after a conn has been disconned, it should no longer be in the list of conns on the sock obj, but for example if conns in the sock are being iterated through to be disconned, we shouldn't remove an item from the list that's being iterated through

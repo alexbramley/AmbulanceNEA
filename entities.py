@@ -114,7 +114,8 @@ class ConnectionManager(object):
         if self._secure_connection == None:
             return Exception("No secure_connection object to send with")
         try:
-            self._secure_connection.send(message)
+            print("adding message to send queue")
+            self._secure_connection.add_message_to_send_queue(message)
         except Exception as e:
             print(f"Failed to send message, there was en exception:\n{e}")
     
