@@ -5,7 +5,7 @@ import time
 
 
 
-client = ss.Client(42075, "utf-8", "!DISCONN", "!HANDSHAKE", socket.gethostbyname(socket.gethostname()))
+client = ss.Client(42076, "utf-8", "!DISCONN", "!HANDSHAKE", socket.gethostbyname(socket.gethostname()))
 client.set_socket_status(True)
 print(client)
 
