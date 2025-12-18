@@ -315,5 +315,6 @@ class Entity(object):
         self.position = new_position
 
 class Ambulance(Entity):
+    """Ambulance vehicle entity"""
     def __repr__(self):
         return "Ambulance "+super().__repr__()
