@@ -46,6 +46,7 @@ class ConnectionManager(object):
         """The main loop of handling new messages from the connection"""
         print("Starting master ConnectionManager thread...")
         while self._master_active:
+            time.sleep(0.1)
             if self._secure_connection != None:
                 new_conn_msg = self._secure_connection.get_most_recent_message()
                 if self._newest_conn_msg != new_conn_msg:
@@ -163,6 +164,7 @@ class ServerManager(object):
     def _master(self):
         """Main loop"""
         while self._master_active:
+            time.sleep(0.1)
             self._refresh_conns()
 
     def handle_connection_message(self, connection_manager, new_message, new_command_data, new_argument_data):
@@ -313,6 +315,9 @@ class Entity(object):
     
     def update_position(self, new_position:vectors.Vector2):
         self.position = new_position
+
+    def get_position(self):
+        return self.position
 
 class Ambulance(Entity):
     """Ambulance vehicle entity"""

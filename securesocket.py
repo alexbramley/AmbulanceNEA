@@ -127,6 +127,7 @@ class Client(SecureSocket):
 		super()._master()
 		self._conns.append(SecureConnection(self, self._master_conn, self._TARGET_ADDR))
 		while self._online:
+			time.sleep(0.1)
 			if len(self._conns) == 0:
 				self.set_socket_status(False)
 				break
@@ -177,6 +178,7 @@ class SecureConnection(object):
 
 
 		while self._connected:
+			time.sleep(0.1)
 			### HANDLES RECEIVING NEW MESSAGES ###
 			new_message_received = False
 			msg = ""
@@ -215,7 +217,7 @@ class SecureConnection(object):
 		"""Loop which handles transmission of data waiting in the queue"""
 		while self._handshaked and self._connected:
 			### HANDLES SENDING MESSAGES FROM THE SEND QUEUE ###
-
+			time.sleep(0.1)
 			try:
 				self._send_items_from_queue()
 			except Exception as e:
