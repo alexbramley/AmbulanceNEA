@@ -293,7 +293,7 @@ class EntityManager(object):
             elif command_data[0] == "DISPLAY_ENTITIES":
                 self.display_entites()
             elif command_data[0] == "UPDATE_ENTITY_POSITION":
-                self.get_entity_by_id(int(argument_data[0])).update_position(float(argument_data[1]), float(argument_data[2])) # argument_data: [0]=id, [1]=xpos, [2]=ypos
+                self.get_entity_by_id(int(argument_data[0])).update_position(vectors.Vector2(float(argument_data[1]), float(argument_data[2]))) # argument_data: [0]=id, [1]=xpos, [2]=ypos
             elif command_data[0] == "REMOVE_ENTITY":
                 self.remove_entity(self.get_entity_by_id(int(argument_data[0]))) # argument_data: [0]=id
             else:
