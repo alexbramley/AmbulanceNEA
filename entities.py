@@ -3,6 +3,7 @@ import securesocket as ss
 import threading
 import time
 import socket
+import math
 
 class SuperManager:
     """Contains references to all managers that there should be one of per client or server"""
@@ -160,20 +161,41 @@ class ServerManager(object):
         self.master_thread = None
         self._master_active = False
         self._previous_messages = [] # a list of all previous broadcasted messages
+        self._previous_combination_idempotency_key = 0
+        self._previous_combination = []
 
     def _master(self):
         """Main loop"""
         while self._master_active:
             time.sleep(0.1)
             self._refresh_conns()
+            self._recalculate_ambulance_combinations()
+
+    def _recalculate_ambulance_combinations(self): # right now there's a problem because unused ambulances' destinations need to be set back to themselves
+        combination = SuperManager.get_entity_manager().calculate_best_combination()
+        if combination == self._previous_combination:
+            return
+        for matchup in combination:
+            ambulance = matchup[0]
+            emergency = matchup[1]
+            ambulance.set_destination(emergency)
+            self.broadcast(f"<SET_DESTINATION|newcombo{self._previous_combination_idempotency_key}>{ambulance.get_id()}|{emergency.get_id()}")
+            self._previous_combination_idempotency_key += 1
+        self._previous_combination = combination
+
 
     def handle_connection_message(self, connection_manager, new_message, new_command_data, new_argument_data):
         """Broadcasts messages to all clients when a message is received"""
         self._previous_messages.append(new_message)
         
-        
+        self.broadcast(new_message)
+        # for recipient_conn_manager in self._conn_managers:
+        #     recipient_conn_manager.send_socket_message(new_message)
+
+    def broadcast(self, message):
         for recipient_conn_manager in self._conn_managers:
-            recipient_conn_manager.send_socket_message(new_message)
+            recipient_conn_manager.send_socket_message(message)
+
 
 
     def _refresh_conns(self):
@@ -235,6 +257,21 @@ class ServerManager(object):
         self._server.set_socket_status(False)
 
 
+
+class VehicleState(object):
+    def __init__(self, name):
+        self._name = name
+        self._next_states = []
+    
+    def get_name(self):
+        return self._name
+    
+    def set_next_states(self, new_states):
+        self._next_states = new_states
+    
+    def get_next_states(self):
+        return self._next_states
+
 class EntityManager(object):
     """Contains references to all entites, creates and does operations on them using commands that have been sent"""
     def __init__(self):
@@ -281,6 +318,82 @@ class EntityManager(object):
     
     def get_entites(self):
         return self._entites
+    
+    def get_ambulances(self):
+        ambulances = []
+        for entity in self._entites:
+            if type(entity) == Ambulance:
+                ambulances.append(entity)
+        return ambulances
+    
+    def get_ambulances_by_state(self, state:VehicleState):
+        ambulances = []
+        for entity in self._entites:
+            if type(entity) == Ambulance:
+                if entity.get_status() == state:
+                    ambulances.append(entity)
+        return ambulances
+    
+    
+    def get_emergencies(self):
+        emergencies = []
+        for entity in self._entites:
+            if type(entity) == Emergency:
+                emergencies.append(entity)
+        return emergencies
+    
+    def calculate_best_combination(self): ### this is **not** what i wanted this to do, need to rewrite to follow the pseudocode exactly
+        available_ambulances = self.get_ambulances_by_state(vehicle_states["available"])
+        emergencies = self.get_emergencies()
+
+        def haversine_distance(pos1, pos2):
+            # positions are Vector2(lat, lon) in degrees
+            r = 6371000  # earth radius in metres
+
+            lat1 = math.radians(pos1.x)
+            lon1 = math.radians(pos1.y)
+            lat2 = math.radians(pos2.x)
+            lon2 = math.radians(pos2.y)
+
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+
+            a = (
+                math.sin(dlat / 2) ** 2
+                + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+            )
+
+            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+            return r * c  # metres
+
+        assignments = []
+        unused_ambulances = set(available_ambulances)
+
+        for emergency in emergencies:
+            best_ambulance = None
+            best_travel_time = float("inf")
+
+            for ambulance in unused_ambulances:
+                distance_m = haversine_distance(
+                    ambulance.get_position(),
+                    emergency.get_position()
+                )
+
+                travel_time = distance_m / ambulance.get_speed()  # seconds
+
+                if travel_time < best_travel_time:
+                    best_travel_time = travel_time
+                    best_ambulance = ambulance
+
+            if best_ambulance is not None:
+                assignments.append(
+                    (best_ambulance, emergency)
+                )
+                unused_ambulances.remove(best_ambulance)
+
+        return assignments
+    
+    
     
     def display_entites(self):
         for entity in self.get_entites():
@@ -335,9 +448,13 @@ class Ambulance(Entity):
         super().__init__(entity_id, position)
         self._status = status
         self._destination = self
+        self._speed = 35
 
     def set_status(self, new_status):
         self._status = new_status
+    
+    def get_speed(self):
+        return self._speed
 
     def get_status(self):
         return self._status
@@ -356,20 +473,20 @@ class Emergency(Entity):
     
 
 
-class VehicleState(object):
-    def __init__(self, name):
-        self._name = name
-        self._next_states = []
-    
-    def get_name(self):
-        return self._name
-    
-    def set_new_states(self, new_states):
-        self._next_states = new_states
-    
-    def get_next_states(self):
-        return self._next_states
     
 
-vehicle_states = {"idle":VehicleState("Idle")}
-# vehicle_states["idle"].set_new_states(vehicle_states["idle"])
+vehicle_states = {"available":VehicleState("Available"),
+                  "en_route":VehicleState("En route"),
+                  "on_scene":VehicleState("On scene"),
+                  "returning_to_hospital":VehicleState("Returning to hospital"),
+                  "unloading":VehicleState("Unloading patient"),
+                  "returning_to_base":VehicleState("Returning to base"),
+                  "handover":VehicleState("Shift handover")}
+
+vehicle_states["available"].set_next_states([vehicle_states["en_route"], vehicle_states["handover"]])
+vehicle_states["en_route"].set_next_states([vehicle_states["en_route"], vehicle_states["on_scene"]])
+vehicle_states["on_scene"].set_next_states([vehicle_states["returning_to_base"], vehicle_states["returning_to_hospital"]])
+vehicle_states["returning_to_hospital"].set_next_states([vehicle_states["unloading"]])
+vehicle_states["unloading"].set_next_states(["returning_to_base"])
+vehicle_states["returning_to_base"].set_next_states([vehicle_states["available"]])
+vehicle_states["handover"].set_next_states([vehicle_states["available"]])
