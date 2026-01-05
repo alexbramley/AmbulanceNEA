@@ -16,18 +16,34 @@ def update_map_entities():
                 # making a new marker
                 marker_text = ""
                 if type(entity) == en.Ambulance:
-                    marker_text = "Ambulance"
+                    marker_text = entity.get_status().get_name() + "Ambulance"
+                    new_path = map_widget.set_path([(entity.get_position().x, entity.get_position().y), (entity.get_destination().get_position().x, entity.get_destination().get_position().y)])
+                    paths[entity.get_id()] = new_path
+                elif type(entity) == en.Emergency:
+                    marker_text = "Emergency"
                 new_marker = map_widget.set_marker(entity.get_position().x, entity.get_position().y, marker_text)
                 markers[entity.get_id()] = (new_marker)
+
+
             else:
                 # updating current marker
                 markers[entity.get_id()].set_position(entity.get_position().x, entity.get_position().y)
+                if type(entity) == en.Ambulance:
+                    paths[entity.get_id()].set_position_list([(entity.get_position().x, entity.get_position().y), (entity.get_destination().get_position().x, entity.get_destination().get_position().y)])
+
+                
+                if type(entity) == en.Ambulance:
+                    markers[entity.get_id()].set_text(entity.get_status().get_name() + " Ambulance going to " + str(entity.get_destination()))
+
             updated_markers[entity.get_id()] = (markers[entity.get_id()])
+
         for entity_id in list(markers):
             if entity_id not in updated_markers:
-
                 marker = markers.pop(entity_id)
                 marker.delete()
+                path = paths.pop(entity_id)
+                path.delete()
+
 
 my_conn_manager = en.ConnectionManager()
 my_entity_manager = en.EntityManager()
@@ -73,6 +89,7 @@ submit_btn = tk.Button(top_frame, text="Submit", command=submit)
 submit_btn.pack()
 
 markers = {}
+paths = {}
 
 map_widget = TkinterMapView(root, width=900, height=500, corner_radius=0)
 map_widget.pack(fill="both", expand=True, padx=10, pady=(0,10))

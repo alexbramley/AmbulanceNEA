@@ -240,13 +240,15 @@ class EntityManager(object):
     def __init__(self):
         self._entites = []
 
-    def add_new_entity(self, entity_id, entity_type, position):
+    def add_new_entity(self, **kwargs):
         """Creates new entity of given type"""
-        if not self.check_entity_exists_by_id(entity_id):
-            if entity_type == "entity":
-                new_entity = Entity(entity_id, position)
-            elif entity_type == "ambulance":
-                new_entity = Ambulance(entity_id, position)
+        if not self.check_entity_exists_by_id(kwargs["entity_id"]):
+            if kwargs["entity_type"] == "entity":
+                new_entity = Entity(kwargs["entity_id"], kwargs["position"])
+            elif kwargs["entity_type"] == "ambulance":
+                new_entity = Ambulance(kwargs["entity_id"], kwargs["position"], vehicle_states[kwargs["status"]])
+            elif kwargs["entity_type"] == "emergency":
+                new_entity = Emergency(kwargs["entity_id"], kwargs["position"])
             else:
                 raise Exception("Entity type invalid!")
 
@@ -288,7 +290,10 @@ class EntityManager(object):
         """Executed correct method based on incoming command"""
         try:
             if command_data[0] == "CREATE_ENTITY":
-                self.add_new_entity(int(argument_data[0]), command_data[1], vectors.Vector2(float(argument_data[1]), float(argument_data[2]))) # command_data: [1]=entitytype argument_data: [0]=id, [1]=xpos, [2]=ypos
+                if command_data[1] == "ambulance":
+                    self.add_new_entity(entity_id=int(argument_data[0]), entity_type=command_data[1], position=vectors.Vector2(float(argument_data[1]), float(argument_data[2])), status=argument_data[3]) # command_data: [1]=entitytype argument_data: [0]=id, [1]=xpos, [2]=ypos
+                else:
+                    self.add_new_entity(entity_id=int(argument_data[0]), entity_type=command_data[1], position=vectors.Vector2(float(argument_data[1]), float(argument_data[2])))
                 print("we added a new entity")
             elif command_data[0] == "DISPLAY_ENTITIES":
                 self.display_entites()
@@ -296,6 +301,8 @@ class EntityManager(object):
                 self.get_entity_by_id(int(argument_data[0])).update_position(vectors.Vector2(float(argument_data[1]), float(argument_data[2]))) # argument_data: [0]=id, [1]=xpos, [2]=ypos
             elif command_data[0] == "REMOVE_ENTITY":
                 self.remove_entity(self.get_entity_by_id(int(argument_data[0]))) # argument_data: [0]=id
+            elif command_data[0] == "SET_DESTINATION":
+                self.get_entity_by_id(int(argument_data[0])).set_destination(self.get_entity_by_id(int(argument_data[1])))
             else:
                 print(f"That command keyword, {command_data[0]}, is invalid")
         except Exception as e:
@@ -322,4 +329,47 @@ class Entity(object):
 class Ambulance(Entity):
     """Ambulance vehicle entity"""
     def __repr__(self):
-        return "Ambulance "+super().__repr__()
+        return "Ambulance "+super().__repr__()+" going to "+str(type(self._destination))
+    
+    def __init__(self, entity_id, position: vectors.Vector2, status):
+        super().__init__(entity_id, position)
+        self._status = status
+        self._destination = self
+
+    def set_status(self, new_status):
+        self._status = new_status
+
+    def get_status(self):
+        return self._status
+    
+    def set_destination(self, new_destination:Entity):
+        self._destination = new_destination
+        print("setting destination to",new_destination)
+
+    def get_destination(self):
+        return self._destination
+
+class Emergency(Entity):
+    """Emergency entity"""
+    def __repr__(self):
+        return "Emergency "+super().__repr__()
+    
+
+
+class VehicleState(object):
+    def __init__(self, name):
+        self._name = name
+        self._next_states = []
+    
+    def get_name(self):
+        return self._name
+    
+    def set_new_states(self, new_states):
+        self._next_states = new_states
+    
+    def get_next_states(self):
+        return self._next_states
+    
+
+vehicle_states = {"idle":VehicleState("Idle")}
+# vehicle_states["idle"].set_new_states(vehicle_states["idle"])

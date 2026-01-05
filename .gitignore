@@ -16,6 +16,6 @@ __pycache__/
 # keys
 *.pem
 
-# OS-specific stuff
+# OS-specific
 .DS_Store
 Thumbs.db
