@@ -31,8 +31,6 @@ def update_map_entities():
                 if type(entity) == en.Ambulance:
                     paths[entity.get_id()].set_position_list([(entity.get_position().x, entity.get_position().y), (entity.get_destination().get_position().x, entity.get_destination().get_position().y)])
 
-                
-                if type(entity) == en.Ambulance:
                     markers[entity.get_id()].set_text(entity.get_status().get_name() + " Ambulance going to " + str(entity.get_destination()))
 
             updated_markers[entity.get_id()] = (markers[entity.get_id()])
@@ -41,15 +39,16 @@ def update_map_entities():
             if entity_id not in updated_markers:
                 marker = markers.pop(entity_id)
                 marker.delete()
-                path = paths.pop(entity_id)
-                path.delete()
+                if entity_id in paths:
+                    path = paths.pop(entity_id)
+                    path.delete()
 
 
 my_conn_manager = en.ConnectionManager()
 my_entity_manager = en.EntityManager()
 
 def setup():
-    client = ss.Client(42076, "utf-8", "!DISCONN", "!HANDSHAKE", socket.gethostbyname(socket.gethostname()))
+    client = ss.Client(42067, "utf-8", "!DISCONN", "!HANDSHAKE", socket.gethostbyname(socket.gethostname()))
     client.set_socket_status(True)
     print(client)
 

@@ -2,7 +2,7 @@ import entities as en
 import securesocket as ss
 import time
 
-server = ss.Server(42076, "utf-8", "!DISCONN", "!HANDSHAKE")
+server = ss.Server(42067, "utf-8", "!DISCONN", "!HANDSHAKE")
 server.set_socket_status(True)
 print(server)
 

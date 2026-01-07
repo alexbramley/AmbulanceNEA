@@ -177,22 +177,31 @@ class ServerManager(object):
             return
         for matchup in combination:
             ambulance = matchup[0]
-            emergency = matchup[1]
-            ambulance.set_destination(emergency)
-            self.broadcast(f"<SET_DESTINATION|newcombo{self._previous_combination_idempotency_key}>{ambulance.get_id()}|{emergency.get_id()}")
+            destination = matchup[1]
+            ambulance.set_destination(destination)
+            self.broadcast(f"<SET_DESTINATION|newdestination{self._previous_combination_idempotency_key}>{ambulance.get_id()}|{destination.get_id()}")
+            if ambulance == destination: # the ambulance has been routed to itself, meaning it's no longer needed
+                print("trying to set status available")
+                ambulance.set_status(vehicle_states["available"])
+                self.broadcast(f"<SET_STATUS|newstatus{self._previous_combination_idempotency_key}>{ambulance.get_id()}|available")
+            else:
+                print("trying to set status en route")
+                ambulance.set_status(vehicle_states["en_route"])
+                self.broadcast(f"<SET_STATUS|newstatus{self._previous_combination_idempotency_key}>{ambulance.get_id()}|en_route")
+
             self._previous_combination_idempotency_key += 1
         self._previous_combination = combination
 
 
     def handle_connection_message(self, connection_manager, new_message, new_command_data, new_argument_data):
         """Broadcasts messages to all clients when a message is received"""
-        self._previous_messages.append(new_message)
         
         self.broadcast(new_message)
         # for recipient_conn_manager in self._conn_managers:
         #     recipient_conn_manager.send_socket_message(new_message)
 
     def broadcast(self, message):
+        self._previous_messages.append(message)
         for recipient_conn_manager in self._conn_managers:
             recipient_conn_manager.send_socket_message(message)
 
@@ -342,14 +351,18 @@ class EntityManager(object):
                 emergencies.append(entity)
         return emergencies
     
-    def calculate_best_combination(self): ### this is **not** what i wanted this to do, need to rewrite to follow the pseudocode exactly
-        available_ambulances = self.get_ambulances_by_state(vehicle_states["available"])
+    def calculate_best_combination(self):
+        import math
+
+        available_ambulances = self.get_ambulances_by_state(vehicle_states["available"]) + self.get_ambulances_by_state(vehicle_states["en_route"])
         emergencies = self.get_emergencies()
 
-        def haversine_distance(pos1, pos2):
-            # positions are Vector2(lat, lon) in degrees
-            r = 6371000  # earth radius in metres
+        if not available_ambulances or not emergencies:
+            return []
 
+        # --- haversine distance in metres ---
+        def haversine_distance(pos1, pos2):
+            r = 6371000
             lat1 = math.radians(pos1.x)
             lon1 = math.radians(pos1.y)
             lat2 = math.radians(pos2.x)
@@ -362,36 +375,106 @@ class EntityManager(object):
                 math.sin(dlat / 2) ** 2
                 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
             )
+            return 2 * r * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-            return r * c  # metres
-
-        assignments = []
-        unused_ambulances = set(available_ambulances)
-
-        for emergency in emergencies:
-            best_ambulance = None
-            best_travel_time = float("inf")
-
-            for ambulance in unused_ambulances:
-                distance_m = haversine_distance(
+        # --- build cost matrix (ambulances x emergencies) ---
+        cost_matrix = []
+        for ambulance in available_ambulances:
+            row = []
+            for emergency in emergencies:
+                distance = haversine_distance(
                     ambulance.get_position(),
                     emergency.get_position()
                 )
+                travel_time = distance / ambulance.get_speed()
+                row.append(travel_time)
+            cost_matrix.append(row)
 
-                travel_time = distance_m / ambulance.get_speed()  # seconds
+        # --- Hungarian algorithm (minimal implementation) ---
+        def hungarian(matrix):
+            n = len(matrix)
+            m = len(matrix[0])
+            size = max(n, m)
 
-                if travel_time < best_travel_time:
-                    best_travel_time = travel_time
-                    best_ambulance = ambulance
+            # pad to square matrix
+            padded = [row + [0] * (size - m) for row in matrix]
+            for _ in range(size - n):
+                padded.append([0] * size)
 
-            if best_ambulance is not None:
-                assignments.append(
-                    (best_ambulance, emergency)
-                )
-                unused_ambulances.remove(best_ambulance)
+            u = [0.0] * (size + 1)
+            v = [0.0] * (size + 1)
+            p = [0] * (size + 1)
+            way = [0] * (size + 1)
+
+            for i in range(1, size + 1):
+                p[0] = i
+                j0 = 0
+                minv = [float("inf")] * (size + 1)
+                used = [False] * (size + 1)
+
+                while True:
+                    used[j0] = True
+                    i0 = p[j0]
+                    delta = float("inf")
+                    j1 = 0
+
+                    for j in range(1, size + 1):
+                        if not used[j]:
+                            cur = padded[i0 - 1][j - 1] - u[i0] - v[j]
+                            if cur < minv[j]:
+                                minv[j] = cur
+                                way[j] = j0
+                            if minv[j] < delta:
+                                delta = minv[j]
+                                j1 = j
+
+                    for j in range(size + 1):
+                        if used[j]:
+                            u[p[j]] += delta
+                            v[j] -= delta
+                        else:
+                            minv[j] -= delta
+
+                    j0 = j1
+                    if p[j0] == 0:
+                        break
+
+                while True:
+                    j1 = way[j0]
+                    p[j0] = p[j1]
+                    j0 = j1
+                    if j0 == 0:
+                        break
+
+            result = []
+            for j in range(1, size + 1):
+                if p[j] <= n and j <= m:
+                    result.append((p[j] - 1, j - 1))
+
+            return result
+
+        hungarian_matches = hungarian(cost_matrix)
+
+        assignments = []
+
+        assigned_ambulance_indices = set()
+
+        # assigned ambulances → emergencies
+        for amb_idx, em_idx in hungarian_matches:
+            ambulance = available_ambulances[amb_idx]
+            emergency = emergencies[em_idx]
+
+            assignments.append((ambulance, emergency))
+            assigned_ambulance_indices.add(amb_idx)
+
+        # unassigned ambulances → (ambulance, ambulance)
+        for idx, ambulance in enumerate(available_ambulances):
+            if idx not in assigned_ambulance_indices:
+                assignments.append((ambulance, ambulance))
 
         return assignments
+
+
     
     
     
@@ -416,6 +499,8 @@ class EntityManager(object):
                 self.remove_entity(self.get_entity_by_id(int(argument_data[0]))) # argument_data: [0]=id
             elif command_data[0] == "SET_DESTINATION":
                 self.get_entity_by_id(int(argument_data[0])).set_destination(self.get_entity_by_id(int(argument_data[1])))
+            elif command_data[0] == "SET_STATUS":
+                self.get_entity_by_id(int(argument_data[0])).set_status(vehicle_states[argument_data[1]]) # argument_data: [0]=id, [1]=status_name
             else:
                 print(f"That command keyword, {command_data[0]}, is invalid")
         except Exception as e:
@@ -451,6 +536,7 @@ class Ambulance(Entity):
         self._speed = 35
 
     def set_status(self, new_status):
+        print(f"setting status {new_status.get_name()}")
         self._status = new_status
     
     def get_speed(self):
