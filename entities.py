@@ -175,6 +175,8 @@ class ServerManager(object):
         combination = SuperManager.get_entity_manager().calculate_best_combination()
         if combination == self._previous_combination:
             return
+        print("we got a new combination, which is")
+        print(combination)
         for matchup in combination:
             ambulance = matchup[0]
             destination = matchup[1]
@@ -357,10 +359,16 @@ class EntityManager(object):
         available_ambulances = self.get_ambulances_by_state(vehicle_states["available"]) + self.get_ambulances_by_state(vehicle_states["en_route"])
         emergencies = self.get_emergencies()
 
-        if not available_ambulances or not emergencies:
+        if not available_ambulances:
             return []
+        
+        if not emergencies:
+            assignments = []
+            for ambulance in available_ambulances:
+                assignments.append((ambulance, ambulance))
+            return assignments
 
-        # --- haversine distance in metres ---
+        # haversine distance
         def haversine_distance(pos1, pos2):
             r = 6371000
             lat1 = math.radians(pos1.x)
@@ -377,7 +385,7 @@ class EntityManager(object):
             )
             return 2 * r * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-        # --- build cost matrix (ambulances x emergencies) ---
+        # build cost matrix (ambulances x emergencies)
         cost_matrix = []
         for ambulance in available_ambulances:
             row = []
@@ -390,7 +398,7 @@ class EntityManager(object):
                 row.append(travel_time)
             cost_matrix.append(row)
 
-        # --- Hungarian algorithm (minimal implementation) ---
+
         def hungarian(matrix):
             n = len(matrix)
             m = len(matrix[0])
