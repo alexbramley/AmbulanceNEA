@@ -3,7 +3,6 @@ import securesocket as ss
 import threading
 import time
 import socket
-import math
 
 class SuperManager:
     """Contains references to all managers that there should be one of per client or server"""
@@ -62,7 +61,7 @@ class ConnectionManager(object):
     def start_master(self):
         """Starts the master loop"""
         self._master_active = True
-        self.master_thread = threading.Thread(target=self._master)
+        self.master_thread = threading.Thread(target=self._master, daemon=True)
         self.master_thread.start()
 
     def end_master(self):
@@ -254,7 +253,7 @@ class ServerManager(object):
     def start_master(self):
         """Starts the master loop"""
         self._master_active = True
-        self.master_thread = threading.Thread(target=self._master)
+        self.master_thread = threading.Thread(target=self._master, daemon=True)
         self.master_thread.start()
 
     def end_master(self):
@@ -296,7 +295,7 @@ class EntityManager(object):
             elif kwargs["entity_type"] == "ambulance":
                 new_entity = Ambulance(kwargs["entity_id"], kwargs["position"], vehicle_states[kwargs["status"]])
             elif kwargs["entity_type"] == "emergency":
-                new_entity = Emergency(kwargs["entity_id"], kwargs["position"])
+                new_entity = Emergency(kwargs["entity_id"], kwargs["position"], kwargs["severity"])
             else:
                 raise Exception("Entity type invalid!")
 
@@ -395,7 +394,9 @@ class EntityManager(object):
                     emergency.get_position()
                 )
                 travel_time = distance / ambulance.get_speed()
-                row.append(travel_time)
+                severity_weight = 1.0/ (1.0+emergency.get_severity())
+                weighted_cost = travel_time * severity_weight
+                row.append(weighted_cost)
             cost_matrix.append(row)
 
 
@@ -496,6 +497,8 @@ class EntityManager(object):
             if command_data[0] == "CREATE_ENTITY":
                 if command_data[1] == "ambulance":
                     self.add_new_entity(entity_id=int(argument_data[0]), entity_type=command_data[1], position=vectors.Vector2(float(argument_data[1]), float(argument_data[2])), status=argument_data[3]) # command_data: [1]=entitytype argument_data: [0]=id, [1]=xpos, [2]=ypos
+                elif command_data[1] == "emergency":
+                    self.add_new_entity(entity_id=int(argument_data[0]), entity_type=command_data[1], position=vectors.Vector2(float(argument_data[1]), float(argument_data[2])), severity=int(argument_data[3]))
                 else:
                     self.add_new_entity(entity_id=int(argument_data[0]), entity_type=command_data[1], position=vectors.Vector2(float(argument_data[1]), float(argument_data[2])))
                 print("we added a new entity")
@@ -564,6 +567,17 @@ class Emergency(Entity):
     """Emergency entity"""
     def __repr__(self):
         return "Emergency "+super().__repr__()
+    
+    def __init__(self, entity_id, position: vectors.Vector2, severity:int):
+        super().__init__(entity_id, position)
+        self._severity = severity
+
+    def set_severity(self, new_severity):
+        self._severity = new_severity
+
+    def get_severity(self):
+        return self._severity
+    
     
 
 

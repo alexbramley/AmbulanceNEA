@@ -16,7 +16,7 @@ with open("default-private.pem","rb") as f:
 KEYSIZE = 1024
 MAXMSGLENGTH = 117
 
-print(rsa.decrypt(rsa.encrypt("test message".encode("utf-8"), DEFAULT_PUBLIC_KEY), DEFAULT_PRIVATE_KEY).decode("utf-8"))
+# print(rsa.decrypt(rsa.encrypt("test message".encode("utf-8"), DEFAULT_PUBLIC_KEY), DEFAULT_PRIVATE_KEY).decode("utf-8"))
 
 class SecureSocket(object):
 	"""Base class for a client or server, handles initial connection"""
