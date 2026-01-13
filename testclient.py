@@ -20,7 +20,7 @@ def update_map_entities():
                     new_path = map_widget.set_path([(entity.get_position().x, entity.get_position().y), (entity.get_destination().get_position().x, entity.get_destination().get_position().y)])
                     paths[entity.get_id()] = new_path
                 elif type(entity) == en.Emergency:
-                    marker_text = "Emergency, severity:" + str(entity.get_severity())
+                    marker_text = "Emergency, severity:" + str(entity.get_severity()) + " requires " + str(entity.get_qualifications())
                 new_marker = map_widget.set_marker(entity.get_position().x, entity.get_position().y, marker_text)
                 markers[entity.get_id()] = (new_marker)
 
@@ -32,6 +32,10 @@ def update_map_entities():
                     paths[entity.get_id()].set_position_list([(entity.get_position().x, entity.get_position().y), (entity.get_destination().get_position().x, entity.get_destination().get_position().y)])
 
                     markers[entity.get_id()].set_text(entity.get_status().get_name() + " Ambulance going to " + str(entity.get_destination()))
+                
+                elif type(entity) == en.Emergency:
+                    marker_text = "Emergency, severity:" + str(entity.get_severity()) + " requires " + str(entity.get_qualifications())
+                    markers[entity.get_id()].set_text(marker_text)
 
             updated_markers[entity.get_id()] = (markers[entity.get_id()])
 
@@ -46,15 +50,16 @@ def update_map_entities():
 
 my_conn_manager = en.ConnectionManager()
 my_entity_manager = en.EntityManager()
+my_database_manager = en.DatabaseManager()
 
 def setup():
-    client = ss.Client(42076, "utf-8", "!DISCONN", "!HANDSHAKE", socket.gethostbyname(socket.gethostname()))
+    client = ss.Client(42067, "utf-8", "!DISCONN", "!HANDSHAKE", socket.gethostbyname(socket.gethostname()))
     client.set_socket_status(True)
     print(client)
 
     time.sleep(0.1)
 
-    en.SuperManager.setup(False, my_conn_manager, my_entity_manager)
+    en.SuperManager.setup(False, my_conn_manager, my_entity_manager, my_database_manager)
 
     my_conn_manager.set_secure_connection(client.get_conn())
     my_conn_manager.start_master()

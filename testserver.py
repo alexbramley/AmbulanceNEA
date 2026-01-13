@@ -2,7 +2,7 @@ import entities as en
 import securesocket as ss
 import time
 
-server = ss.Server(42076, "utf-8", "!DISCONN", "!HANDSHAKE")
+server = ss.Server(42067, "utf-8", "!DISCONN", "!HANDSHAKE")
 server.set_socket_status(True)
 print(server)
 
@@ -11,8 +11,9 @@ time.sleep(0.1)
 
 my_server_manager = en.ServerManager()
 my_entity_manager = en.EntityManager()
+my_database_manager = en.DatabaseManager()
 
-en.SuperManager.setup(True, my_server_manager, my_entity_manager)
+en.SuperManager.setup(True, my_server_manager, my_entity_manager, my_database_manager)
 
 my_server_manager.set_server(server)
 my_server_manager.start_master()
