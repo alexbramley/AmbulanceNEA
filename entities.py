@@ -30,11 +30,11 @@ class SuperManager:
     @classmethod
     def get_entity_manager(cls):
         return cls._entity_manager
-    
+
     @classmethod
     def get_server_manager(cls):
         return cls._server_manager
-    
+
     @classmethod
     def get_database_manager(cls):
         return cls._database_manager
@@ -58,7 +58,7 @@ class ConnectionManager(object):
         self._newest_conn_argument_data = []
         self._previous_idempotency_keys = []
 
-    
+
     def _master(self):
         """The main loop of handling new messages from the connection"""
         print("Starting master ConnectionManager thread...")
@@ -72,9 +72,9 @@ class ConnectionManager(object):
                     self._newest_conn_command_data, self._newest_conn_argument_data = self._handle_conn_msg(self._newest_conn_msg)
                     if SuperManager.get_is_server() == True:
                         SuperManager.get_server_manager().handle_connection_message(self, self._newest_conn_msg, self._newest_conn_command_data, self._newest_conn_argument_data)
-                    
-                    
-    
+
+
+
     def start_master(self):
         """Starts the master loop"""
         self._master_active = True
@@ -90,7 +90,7 @@ class ConnectionManager(object):
     def _handle_conn_msg(self, message):
         """Gets triggered when we get a new message, decodes and executes the message command"""
         print(f"We got a message!! {message} is the message.")
-        
+
         try:
             command_data, argument_data = self._parse_message(message, "<", ">", "|")
             print(f"received command: {command_data[0]}")
@@ -98,11 +98,11 @@ class ConnectionManager(object):
 
             if command_data[-1] in self._previous_idempotency_keys:
                 raise Exception("Repeat idempotency key")
-            
+
             self._previous_idempotency_keys.append(command_data[-1])
-            
+
             SuperManager.get_entity_manager().handle_command(command_data, argument_data)
-            
+
             return (command_data, argument_data)
         except Exception as e:
             print(e)
@@ -115,7 +115,7 @@ class ConnectionManager(object):
         letters = list(message)
         if letters.pop(0) != start_char:
             raise Exception("Message has invalid format")
-        
+
         current_data = ""
         command_data = []
         argument_data = []
@@ -133,10 +133,10 @@ class ConnectionManager(object):
                     reading_command_data = False
             else:
                 current_data += letter
-        
+
         if current_data != "":
             argument_data.append(current_data)
-        
+
         return command_data, argument_data
 
 
@@ -149,7 +149,7 @@ class ConnectionManager(object):
             self._secure_connection.add_message_to_send_queue(message)
         except Exception as e:
             print(f"Failed to send message, there was en exception:\n{e}")
-    
+
     def disconnect(self):
         """Starts a disconnect on the SecureConnection object"""
         if self._secure_connection != None:
@@ -161,13 +161,13 @@ class ConnectionManager(object):
 
     def get_secure_connection(self):
         return self._secure_connection
-    
+
     def get_newest_message(self):
         return self._newest_conn_msg
 
     def get_newest_message_data(self):
         return self._newest_conn_command_data, self._newest_conn_argument_data
-    
+
 class ServerManager(object):
     """Handles creating ConnectionManager objects and also broadcasting messages where relevant"""
     def __init__(self):
@@ -213,7 +213,7 @@ class ServerManager(object):
 
     def handle_connection_message(self, connection_manager, new_message, new_command_data, new_argument_data):
         """Broadcasts messages to all clients when a message is received"""
-        
+
         self.broadcast(new_message)
         # for recipient_conn_manager in self._conn_managers:
         #     recipient_conn_manager.send_socket_message(new_message)
@@ -238,7 +238,7 @@ class ServerManager(object):
             for conn in server_conns:
                 if conn_manager.get_secure_connection() == conn:
                     conn_found = True
-            
+
             if not conn_found:
                 print("Removing an old connection that no longer exists on the server...")
                 conn_manager.end_master()
@@ -251,7 +251,7 @@ class ServerManager(object):
             for conn_manager in self._conn_managers:
                 if conn_manager.get_secure_connection() == conn:
                     conn_found = True
-            
+
             if not conn_found:
                 print("The server got a new connection!!")
                 new_conn_manager = ConnectionManager()
@@ -289,16 +289,16 @@ class AmbulanceCrew(object):
         self._ambulance = None
         self._qualifications = []
         self._hashed_password = ""
-    
+
     def add_qualification(self, new_qualification):
         self._qualifications.append(new_qualification)
-    
+
     def get_qualifications(self):
         return self._qualifications
 
     def get_id(self):
         return self._crew_id
-    
+
     def set_ambulance(self, new_ambulance):
         self._ambulance = new_ambulance
 
@@ -311,10 +311,10 @@ class Qualification(object):
     def __init__(self, qualification_id, qualification_name):
         self._id = qualification_id
         self._name = qualification_name
-    
+
     def get_name(self):
         return self._name
-    
+
     def get_id(self):
         return self._id
 
@@ -322,13 +322,13 @@ class VehicleState(object):
     def __init__(self, name):
         self._name = name
         self._next_states = []
-    
+
     def get_name(self):
         return self._name
-    
+
     def set_next_states(self, new_states):
         self._next_states = new_states
-    
+
     def get_next_states(self):
         return self._next_states
 
@@ -337,14 +337,14 @@ class Entity(object):
     """Base class for all entity objects"""
     def __repr__(self):
         return f"entity object with id {self._id} at position {self.position}"
-    
+
     def __init__(self, entity_id, position:vectors.Vector2):
         self._id = entity_id
         self.position = position
 
     def get_id(self):
         return self._id
-    
+
     def update_position(self, new_position:vectors.Vector2):
         self.position = new_position
 
@@ -359,7 +359,7 @@ class Ambulance(Entity):
         except:
             qualification_string = " with no qualifications"
         return "Ambulance "+super().__repr__()+" going to "+str(type(self._destination))+qualification_string
-    
+
     def __init__(self, entity_id, position: vectors.Vector2, status):
         super().__init__(entity_id, position)
         self._status = status
@@ -370,7 +370,7 @@ class Ambulance(Entity):
 
     def set_callsign(self, new_call_sign):
         self._callsign = new_call_sign
-    
+
     def get_callsign(self):
         return self._callsign
 
@@ -383,13 +383,13 @@ class Ambulance(Entity):
     def set_status(self, new_status):
         print(f"setting status {new_status.get_name()}")
         self._status = new_status
-    
+
     def get_speed(self):
         return self._speed
 
     def get_status(self):
         return self._status
-    
+
     def set_destination(self, new_destination:Entity):
         self._destination = new_destination
         print("setting destination to",new_destination)
@@ -401,7 +401,7 @@ class Emergency(Entity):
     """Emergency entity"""
     def __repr__(self):
         return "Emergency "+super().__repr__()
-    
+
     def __init__(self, entity_id, position: vectors.Vector2, severity:int):
         super().__init__(entity_id, position)
         self._severity = severity
@@ -415,7 +415,7 @@ class Emergency(Entity):
 
     def set_response_time(self, new_response_time):
         self._response_time = new_response_time
-    
+
     def set_start_time(self, new_start_time):
         self._start_time = new_start_time
 
@@ -424,17 +424,17 @@ class Emergency(Entity):
 
     def get_response_time(self):
         return self._response_time
-    
+
     def get_start_time(self):
         return self._start_time
 
     def get_end_time(self):
         return self._end_time
-    
+
     def add_qualification(self, new_qualification):
         print("adding a new qualification "+str(new_qualification.get_name()))
         self._qualifications.append(new_qualification)
-    
+
     def get_qualifications(self):
         return self._qualifications
 
@@ -443,7 +443,7 @@ class Emergency(Entity):
 
     def get_severity(self):
         return self._severity
-    
+
 
 
 class EntityManager(object):
@@ -474,7 +474,7 @@ class EntityManager(object):
             if entity.get_id() == entity_id:
                 return entity
         raise Exception(f"No entity found with id: {entity_id}")
-    
+
     def check_entity_exists_by_id(self, entity_id):
         try:
             self.get_entity_by_id(entity_id)
@@ -491,17 +491,17 @@ class EntityManager(object):
                 self._entites.remove(entity)
                 return
         raise Exception(f"No such entity found")
-    
+
     def get_entites(self):
         return self._entites
-    
+
     def get_ambulances(self):
         ambulances = []
         for entity in self._entites:
             if type(entity) == Ambulance:
                 ambulances.append(entity)
         return ambulances
-    
+
     def get_ambulances_by_state(self, state:VehicleState):
         ambulances = []
         for entity in self._entites:
@@ -509,15 +509,15 @@ class EntityManager(object):
                 if entity.get_status() == state:
                     ambulances.append(entity)
         return ambulances
-    
-    
+
+
     def get_emergencies(self):
         emergencies = []
         for entity in self._entites:
             if type(entity) == Emergency:
                 emergencies.append(entity)
         return emergencies
-    
+
     def calculate_best_combination(self):
         import math
 
@@ -526,7 +526,7 @@ class EntityManager(object):
 
         if not available_ambulances:
             return []
-        
+
         if not emergencies:
             assignments = []
             for ambulance in available_ambulances:
@@ -670,24 +670,24 @@ class EntityManager(object):
         for crew in self._crews:
             if crew.get_id() == crew_id:
                 return crew
-            
+
         raise Exception("No crew exists with that id")
-    
+
     def get_crew_by_ambulance(self, ambulance):
         for crew in self._crews:
             if crew.get_ambulance() == ambulance:
                 return crew
-            
+
         raise Exception("No crew exists with that ambulance")
-    
+
     def display_entites(self):
         for entity in self.get_entites():
             print(entity)
-    
+
     def assign_crew(self, ambulance:Ambulance, crew:AmbulanceCrew):
         ambulance.set_crew(crew)
         crew.set_ambulance(ambulance)
-    
+
     def handle_command(self, command_data, argument_data):
         """Executed correct method based on incoming command"""
         try:
