@@ -5,8 +5,117 @@ import time
 import socket
 import datetime
 import sqlite3
+import os
+import queue
 
 WRONG_QUALIFICATION_PENALTY = 2000
+DBPATH = "ambulancedata.db"
+
+def init_db():
+    con = sqlite3.connect(DBPATH, timeout=10)
+    con.execute("PRAGMA journal_mode=WAL;")
+    con.execute("PRAGMA foreign_keys=ON;")
+    con.close()
+
+class DatabaseManager:
+    def __init__(self):
+        self._job_queue = queue.Queue()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._running = False
+        self._con = None
+        self._last_result = None
+        self._lock = threading.Lock()  # protects _last_result
+
+    # ---------- public API ----------
+
+    def start(self):
+        """Start the DB thread"""
+        self._running = True
+        self._thread.start()
+
+    def stop(self):
+        """Stop the DB thread"""
+        self._running = False
+        self._job_queue.put(None)  # sentinel
+        time.sleep(0.1)
+        self._thread.join()
+        
+
+    def execute(self, sql: str, params: tuple = ()):
+        """
+        Submit an SQL command to run on the DB thread.
+        For SELECTs, fetchone() will be stored in _last_result.
+        For INSERT/UPDATE/DELETE, commits automatically.
+        """
+        done_queue = queue.Queue(maxsize=1)
+        self._job_queue.put((sql, params, done_queue))
+        # wait for job to complete
+        done_queue.get()
+
+    def get_last_result(self):
+        """Return the last fetchone() result"""
+        with self._lock:
+            return self._last_result
+
+    # ---------- internal DB thread ----------
+
+    def _run(self):
+        # single connection for this thread
+        self._con = sqlite3.connect(DBPATH, timeout=5)
+        self._con.execute("PRAGMA journal_mode=WAL;")
+        self._con.execute("PRAGMA foreign_keys=ON;")
+        self._create_tables()
+
+        while self._running:
+            job = self._job_queue.get()
+            if job is None:
+                if self._con:
+                    self._con.close()
+                break
+
+            sql, params, done_queue = job
+            try:
+                cur = self._con.cursor()
+                print(f"executing {sql} with params {params}")
+                cur.execute(sql, params)
+                print("executed!!")
+
+                if sql.strip().upper().startswith("SELECT"):
+                    with self._lock:
+                        self._last_result = cur.fetchone()
+                else:
+                    self._con.commit()
+
+            except Exception as e:
+                print("DB Error:", e)
+                with self._lock:
+                    self._last_result = None
+
+            finally:
+                done_queue.put(True)
+
+    # ---------- table setup ----------
+
+    def _create_tables(self):
+        if self._con:
+            cur = self._con.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS Ambulance(
+                    AmbulanceCallSign TEXT PRIMARY KEY
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS AmbulanceCrew(
+                    CrewID TEXT PRIMARY KEY,
+                    AmbulanceCallSign TEXT,
+                    CrewHashedPassword TEXT,
+                    FOREIGN KEY (AmbulanceCallSign)
+                        REFERENCES Ambulance(AmbulanceCallSign)
+                )
+            """)
+            self._con.commit()
+        else:
+            raise Exception("databasemanager._con is set as None")
 
 
 class SuperManager:
@@ -36,16 +145,8 @@ class SuperManager:
         return cls._server_manager
 
     @classmethod
-    def get_database_manager(cls):
+    def get_database_manager(cls) -> DatabaseManager:
         return cls._database_manager
-
-class DatabaseManager(object):
-    def __init__(self):
-        pass
-
-    def store_objects_to_memory(self):
-        entity_manager = SuperManager.get_entity_manager()
-        # this subroutine should get all of the emergencies and ambulances and ambulance crews and store all relevant data into a multi table database
 
 class ConnectionManager(object):
     """Handles a connection on a higher level than securesocket.SecureConnection"""
@@ -360,13 +461,13 @@ class Ambulance(Entity):
             qualification_string = " with no qualifications"
         return "Ambulance "+super().__repr__()+" going to "+str(type(self._destination))+qualification_string
 
-    def __init__(self, entity_id, position: vectors.Vector2, status):
+    def __init__(self, entity_id, position: vectors.Vector2, status, callsign):
         super().__init__(entity_id, position)
         self._status = status
         self._destination = self
         self._speed = 35
         self._crew = None
-        self._callsign = ""
+        self._callsign = callsign
 
     def set_callsign(self, new_call_sign):
         self._callsign = new_call_sign
@@ -458,7 +559,7 @@ class EntityManager(object):
             if kwargs["entity_type"] == "entity":
                 new_entity = Entity(kwargs["entity_id"], kwargs["position"])
             elif kwargs["entity_type"] == "ambulance":
-                new_entity = Ambulance(kwargs["entity_id"], kwargs["position"], vehicle_states[kwargs["status"]])
+                new_entity = Ambulance(kwargs["entity_id"], kwargs["position"], vehicle_states[kwargs["status"]], kwargs["callsign"])
             elif kwargs["entity_type"] == "emergency":
                 new_entity = Emergency(kwargs["entity_id"], kwargs["position"], kwargs["severity"])
                 new_entity.set_start_time(datetime.datetime.now())
@@ -664,7 +765,43 @@ class EntityManager(object):
         return assignments
 
     def create_crew(self, crew_id):
+        if SuperManager.get_is_server():
+            dbm = SuperManager.get_database_manager()
+            try:
+                dbm.execute(
+                    "SELECT 1 FROM AmbulanceCrew WHERE CrewID = ? LIMIT 1",
+                    ("CRW" + str(crew_id).rjust(3, "0"),)
+                )
+
+                crew_exists = dbm.get_last_result() is not None
+
+                if crew_exists:
+                    dbm.execute(
+                        "SELECT CrewHashedPassword FROM AmbulanceCrew WHERE CrewID = ? LIMIT 1",
+                        ("CRW" + str(crew_id).rjust(3, "0"),)
+                    )
+                    password_data = dbm.get_last_result()
+                    if password_data != None:
+                        password = password_data[0]
+                        print(password)
+                else:
+                    dbm.execute(
+                        "INSERT OR IGNORE INTO AmbulanceCrew(CrewID, AmbulanceCallSign, CrewHashedPassword) VALUES (?, ?, ?)",
+                        ("CRW" + str(crew_id).rjust(3, "0"),"AMB001","exapmlepassword",)
+                    )
+                    
+                    print("we made a record")
+            except Exception as e:
+                print("there was an error in the crew db operation")
+                print(type(e),e)
+
         self._crews.append(AmbulanceCrew(crew_id))
+        # when we get the create crew command, we should check if a crew with that id exists in the db.
+        # if so, we should check if the password given matches that crew's password
+            # if yes, then create the crew
+            # if no, then we should refuse to create the crew
+        # if no crew exists with that id, we should make a new crew with that id and password # BUT THIS MUST BE AUTHED BY AN ADMIN SOMEHOW
+        
 
     def get_crew_by_id(self, crew_id:int):
         for crew in self._crews:
@@ -693,7 +830,7 @@ class EntityManager(object):
         try:
             if command_data[0] == "CREATE_ENTITY":
                 if command_data[1] == "ambulance":
-                    self.add_new_entity(entity_id=int(argument_data[0]), entity_type=command_data[1], position=vectors.Vector2(float(argument_data[1]), float(argument_data[2])), status=argument_data[3]) # command_data: [1]=entitytype argument_data: [0]=id, [1]=xpos, [2]=ypos
+                    self.add_new_entity(entity_id=int(argument_data[0]), entity_type=command_data[1], position=vectors.Vector2(float(argument_data[1]), float(argument_data[2])), status=argument_data[3], callsign=argument_data[4]) # command_data: [1]=entitytype argument_data: [0]=id, [1]=xpos, [2]=ypos
                 elif command_data[1] == "emergency":
                     self.add_new_entity(entity_id=int(argument_data[0]), entity_type=command_data[1], position=vectors.Vector2(float(argument_data[1]), float(argument_data[2])), severity=int(argument_data[3])) # argument_data[3]=severity
                 else:

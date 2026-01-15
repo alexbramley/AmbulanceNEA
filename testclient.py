@@ -53,7 +53,7 @@ my_entity_manager = en.EntityManager()
 my_database_manager = en.DatabaseManager()
 
 def setup():
-    client = ss.Client(42067, "utf-8", "!DISCONN", "!HANDSHAKE", socket.gethostbyname(socket.gethostname()))
+    client = ss.Client(42072, "utf-8", "!DISCONN", "!HANDSHAKE", socket.gethostbyname(socket.gethostname()))
     client.set_socket_status(True)
     print(client)
 
