@@ -559,6 +559,35 @@ class EntityManager(object):
             if kwargs["entity_type"] == "entity":
                 new_entity = Entity(kwargs["entity_id"], kwargs["position"])
             elif kwargs["entity_type"] == "ambulance":
+
+
+                # when we get the create ambulance command, we should check if an ambulance with that id exists in the db.
+                # if so, we then create the ambulance
+                # if no ambulance exists with that id, we should make a new ambulance with that id # TODO THIS MUST BE AUTHED BY AN ADMIN SOMEHOW
+
+                if SuperManager.get_is_server():
+                    try:
+                        dbm = SuperManager.get_database_manager()
+
+                        dbm.execute("SELECT 1 FROM Ambulance WHERE AmbulanceCallSign = ? LIMIT 1",
+                                           (kwargs["callsign"],))
+                        ambulance_exists = dbm.get_last_result() is not None
+
+                        if ambulance_exists:
+                            print("That ambulance exists in the database")
+                        else:
+                            dbm.execute(
+                                "INSERT OR IGNORE INTO Ambulance(AmbulanceCallSign) VALUES (?)",
+                                (kwargs["callsign"],)
+                            )
+                            print("we made a new ambulance")
+
+                    except Exception as e:
+                        print(e)
+
+
+
+
                 new_entity = Ambulance(kwargs["entity_id"], kwargs["position"], vehicle_states[kwargs["status"]], kwargs["callsign"])
             elif kwargs["entity_type"] == "emergency":
                 new_entity = Emergency(kwargs["entity_id"], kwargs["position"], kwargs["severity"])
@@ -800,7 +829,7 @@ class EntityManager(object):
         # if so, we should check if the password given matches that crew's password
             # if yes, then create the crew
             # if no, then we should refuse to create the crew
-        # if no crew exists with that id, we should make a new crew with that id and password # BUT THIS MUST BE AUTHED BY AN ADMIN SOMEHOW
+        # if no crew exists with that id, we should make a new crew with that id and password # TODO THIS MUST BE AUTHED BY AN ADMIN SOMEHOW
         
 
     def get_crew_by_id(self, crew_id:int):
