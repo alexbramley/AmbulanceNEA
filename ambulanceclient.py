@@ -1,0 +1,260 @@
+import entities as en
+import socket
+import securesocket as ss
+import time
+import tkinter as tk
+from tkintermapview import TkinterMapView
+import threading
+
+# =========================
+# GLOBALS
+# =========================
+
+markers = {}
+paths = {}
+map_widget = None
+entry = None
+
+my_conn_manager = en.ConnectionManager()
+my_entity_manager = en.EntityManager()
+my_database_manager = en.DatabaseManager()
+
+
+# =========================
+# NETWORK SETUP (RUN FIRST)
+# =========================
+
+def connect_to_server():
+    client = ss.Client(
+        42073,
+        "utf-8",
+        "!DISCONN",
+        "!HANDSHAKE",
+        socket.gethostbyname(socket.gethostname())
+    )
+    client.set_socket_status(True)
+
+    time.sleep(0.1)
+
+    en.SuperManager.setup(
+        False,
+        my_conn_manager,
+        my_entity_manager,
+        my_database_manager
+    )
+
+    my_conn_manager.set_secure_connection(client.get_conn())
+    my_conn_manager.start_master()
+
+
+
+def update_map_entities():
+    while True:
+        updated_markers = {}
+        time.sleep(1)
+        for entity in my_entity_manager.get_entites():
+            if entity.get_id() not in markers and map_widget:
+                # making a new marker
+                marker_text = ""
+                if type(entity) == en.Ambulance:
+                    marker_text = entity.get_status().get_name() + "Ambulance"
+                    new_path = map_widget.set_path([(entity.get_position().x, entity.get_position().y), (entity.get_destination().get_position().x, entity.get_destination().get_position().y)])
+                    paths[entity.get_id()] = new_path
+                elif type(entity) == en.Emergency:
+                    marker_text = "Emergency, severity:" + str(entity.get_severity()) + " requires " + str(entity.get_qualifications())
+                new_marker = map_widget.set_marker(entity.get_position().x, entity.get_position().y, marker_text)
+                markers[entity.get_id()] = (new_marker)
+
+
+            else:
+                # updating current marker
+                markers[entity.get_id()].set_position(entity.get_position().x, entity.get_position().y)
+                if type(entity) == en.Ambulance:
+                    paths[entity.get_id()].set_position_list([(entity.get_position().x, entity.get_position().y), (entity.get_destination().get_position().x, entity.get_destination().get_position().y)])
+
+                    markers[entity.get_id()].set_text(entity.get_status().get_name() + " Ambulance going to " + str(entity.get_destination()))
+                
+                elif type(entity) == en.Emergency:
+                    marker_text = "Emergency, severity:" + str(entity.get_severity()) + " requires " + str(entity.get_qualifications())
+                    markers[entity.get_id()].set_text(marker_text)
+
+            updated_markers[entity.get_id()] = (markers[entity.get_id()])
+
+        for entity_id in list(markers):
+            if entity_id not in updated_markers:
+                marker = markers.pop(entity_id)
+                marker.delete()
+                if entity_id in paths:
+                    path = paths.pop(entity_id)
+                    path.delete()
+    # while True:
+    #     time.sleep(1)
+    #     updated = {}
+
+    #     for entity in my_entity_manager.get_entites():
+    #         if entity.get_id() not in markers and map_widget:
+    #             text = ""
+
+    #             if type(entity) == en.Ambulance:
+    #                 text = entity.get_status().get_name() + " Ambulance"
+    #                 paths[entity.get_id()] = map_widget.set_path([
+    #                     (entity.get_position().x, entity.get_position().y),
+    #                     (entity.get_destination().get_position().x,
+    #                      entity.get_destination().get_position().y)
+    #                 ])
+
+    #             elif type(entity) == en.Emergency:
+    #                 text = f"Emergency severity {entity.get_severity()}"
+
+    #             markers[entity.get_id()] = map_widget.set_marker(
+    #                 entity.get_position().x,
+    #                 entity.get_position().y,
+    #                 text
+    #             )
+    #         else:
+    #             markers[entity.get_id()].set_position(
+    #                 entity.get_position().x,
+    #                 entity.get_position().y
+    #             )
+
+    #         updated[entity.get_id()] = markers[entity.get_id()]
+
+    #     for eid in list(markers):
+    #         if eid not in updated:
+    #             markers[eid].delete()
+    #             markers.pop(eid)
+    #             if eid in paths:
+    #                 paths[eid].delete()
+    #                 paths.pop(eid)
+
+
+# =========================
+# TKINTER APP
+# =========================
+
+class App(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Ambulance Control")
+        self.geometry("900x600")
+        self.frames = {}
+
+    def show_frame(self, name):
+        self.frames[name].tkraise()
+
+
+class LoginFrame(tk.Frame):
+    def __init__(self, master, controller):
+        super().__init__(master)
+        self.controller = controller
+
+        tk.Label(self, text="Server Login", font=("Arial", 22)).pack(pady=40)
+
+        self.username = tk.Entry(self)
+        self.callsign = tk.Entry(self)
+        self.password = tk.Entry(self, show="*")
+
+        self.username.pack(pady=5)
+        self.callsign.pack(pady=5)
+        self.password.pack(pady=5)
+
+        self.status = tk.Label(self, text="")
+        self.status.pack(pady=5)
+
+        tk.Button(self, text="Login", command=self.login).pack(pady=20)
+
+    def login(self):
+        user = self.username.get()
+        clsgn = self.callsign.get()
+        pwd = self.password.get()
+
+        if not user or not pwd or not clsgn:
+            self.status.config(text="Missing fields", fg="red")
+            return
+
+        # SEND LOGIN REQUEST TO SERVER
+        my_conn_manager.send_socket_message(
+            f"<LOGIN>{user}|{pwd}|{clsgn}",
+            True
+        )
+
+        # TEMP: poll for server response
+        threading.Thread(
+            target=self.wait_for_auth,
+            daemon=True
+        ).start()
+
+    def wait_for_auth(self):
+        # You should replace this with your actual server response logic
+        time.sleep(0.5)
+
+
+        if my_conn_manager.logged_in:
+            self.master.after(0, self.success)
+        else:
+            self.master.after(0, self.fail)
+
+    def success(self):
+        self.controller.show_frame("main")
+
+        threading.Thread(
+            target=update_map_entities,
+            daemon=True
+        ).start()
+
+    def fail(self):
+        self.status.config(text="Invalid login", fg="red")
+
+
+class MainFrame(tk.Frame):
+    def __init__(self, master, controller):
+        super().__init__(master)
+
+        self.controller = controller
+
+        global entry, map_widget
+
+        def submit():
+            if entry == None:
+                return
+            if entry.get():
+                my_conn_manager.send_socket_message(entry.get(), False)
+
+        top = tk.Frame(self)
+        top.pack(fill="x", padx=10, pady=10)
+
+        entry = tk.Entry(top, width=40)
+        entry.pack(side="left", padx=(0, 10))
+
+        tk.Button(top, text="Send", command=submit).pack()
+
+        map_widget = TkinterMapView(self, corner_radius=20)
+        map_widget.pack(fill="both", expand=True, padx=10, pady=10)
+
+        map_widget.set_position(51.5074, -0.1278)
+        map_widget.set_zoom(10)
+
+
+# =========================
+# STARTUP
+# =========================
+
+# 🔥 CONNECT FIRST
+connect_to_server()
+
+app = App()
+
+login = LoginFrame(app, app)
+main = MainFrame(app, app)
+
+app.frames["login"] = login
+app.frames["main"] = main
+
+login.place(relwidth=1, relheight=1)
+main.place(relwidth=1, relheight=1)
+
+app.show_frame("login")
+app.mainloop()
+
+my_conn_manager.disconnect()
+my_conn_manager.end_master()

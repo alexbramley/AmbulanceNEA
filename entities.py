@@ -150,6 +150,7 @@ class SuperManager:
 class ConnectionManager(object):
     """Handles a connection on a higher level than securesocket.SecureConnection"""
     def __init__(self):
+        self.logged_in = False
         self._secure_connection = None
         self._newest_conn_msg = ""
         self.master_thread = None
@@ -157,6 +158,7 @@ class ConnectionManager(object):
         self._newest_conn_command_data = []
         self._newest_conn_argument_data = []
         self._previous_idempotency_keys = []
+        self._messages_to_send_when_logged_in = []
 
 
     def _master(self):
@@ -170,8 +172,28 @@ class ConnectionManager(object):
                     print("we got a brand new message")
                     self._newest_conn_msg = new_conn_msg
                     self._newest_conn_command_data, self._newest_conn_argument_data = self._handle_conn_msg(self._newest_conn_msg)
-                    if SuperManager.get_is_server() == True:
-                        SuperManager.get_server_manager().handle_connection_message(self, self._newest_conn_msg, self._newest_conn_command_data, self._newest_conn_argument_data)
+
+                    if self.logged_in:
+                        try:
+                            SuperManager.get_entity_manager().handle_command(self._newest_conn_command_data, self._newest_conn_argument_data)
+                        except Exception as e:
+                            print(e)
+                        
+                        if SuperManager.get_is_server() == True:
+                            SuperManager.get_server_manager().handle_connection_message(self, self._newest_conn_msg, self._newest_conn_command_data, self._newest_conn_argument_data)
+                    else:
+                        if SuperManager.get_is_server():
+                            self.logged_in = SuperManager.get_server_manager().handle_login_message(self, self._newest_conn_command_data, self._newest_conn_argument_data)
+                            if self.logged_in:
+                                self.send_socket_message("<LOGIN_SUCCESS>", True)
+                                self._send_login_message_queue()
+                            else:
+                                self.send_socket_message("<LOGIN_FAILURE>", True)
+                        else:
+                            self.logged_in = self._newest_conn_command_data[0] == "LOGIN_SUCCESS"
+                            print("login status",self.logged_in)
+                            if self.logged_in:
+                                self._send_login_message_queue()
 
 
 
@@ -188,7 +210,7 @@ class ConnectionManager(object):
             self.master_thread.join()
 
     def _handle_conn_msg(self, message):
-        """Gets triggered when we get a new message, decodes and executes the message command"""
+        """Gets triggered when we get a new message, decodes the message command"""
         print(f"We got a message!! {message} is the message.")
 
         try:
@@ -201,7 +223,7 @@ class ConnectionManager(object):
 
             self._previous_idempotency_keys.append(command_data[-1])
 
-            SuperManager.get_entity_manager().handle_command(command_data, argument_data)
+            
 
             return (command_data, argument_data)
         except Exception as e:
@@ -240,15 +262,25 @@ class ConnectionManager(object):
         return command_data, argument_data
 
 
-    def send_socket_message(self, message):
+    def send_socket_message(self, message, bypass_login_check):
         """Sends a message throught the SecureConnection object"""
+        if not self.logged_in and not bypass_login_check:
+            self._messages_to_send_when_logged_in.append(message)
+            return
+        
         if self._secure_connection == None:
-            return Exception("No secure_connection object to send with")
+            raise Exception("No secure_connection object to send with")
         try:
             print("adding message to send queue")
             self._secure_connection.add_message_to_send_queue(message)
         except Exception as e:
             print(f"Failed to send message, there was en exception:\n{e}")
+
+    def _send_login_message_queue(self):
+        if not self.logged_in:
+            raise Exception("Can't send as not logged in")
+        for message in self._messages_to_send_when_logged_in:
+            self.send_socket_message(message, False)
 
     def disconnect(self):
         """Starts a disconnect on the SecureConnection object"""
@@ -317,11 +349,45 @@ class ServerManager(object):
         self.broadcast(new_message)
         # for recipient_conn_manager in self._conn_managers:
         #     recipient_conn_manager.send_socket_message(new_message)
+    
+    def handle_login_message(self, connection_manager, command_data, argument_data):
+        if command_data[0] != "LOGIN":
+            return False
+        
+        try:
+            dbm = SuperManager.get_database_manager()
+
+            # <LOGIN>CrewID|CrewHashedPassword|AmbulanceCallSign
+
+            dbm.execute("SELECT 1 FROM Ambulance, AmbulanceCrew WHERE Ambulance.AmbulanceCallSign = ? AND AmbulanceCrew.AmbulanceCallSign = ? AND AmbulanceCrew.CrewID = ? AND AmbulanceCrew.CrewHashedPassword = ? LIMIT 1",
+                                (argument_data[2], argument_data[2], argument_data[0], argument_data[1]))
+            
+            ambulance_exists = dbm.get_last_result() is not None
+
+            if ambulance_exists:
+                print("That ambulance and crew combo exists in the database")
+                print("Login successful!!")
+                self.broadcast(f"<CREATE_ENTITY|ambulance|login{self._previous_combination_idempotency_key}>{int(argument_data[2][-3:])}|0|0|available|{argument_data[2]}")
+                self._previous_combination_idempotency_key += 1
+                self.broadcast(f"<CREATE_CREW|login{self._previous_combination_idempotency_key}>{int(argument_data[0][-3:])}")
+                self._previous_combination_idempotency_key += 1
+                self.broadcast(f"<ASSIGN_CREW|login{self._previous_combination_idempotency_key}>{int(argument_data[2][-3:])}|{int(argument_data[0][-3:])}")
+                self._previous_combination_idempotency_key += 1
+
+                return True
+            
+
+        except Exception as e:
+            print(e)
+            return False
+        
+        return False
+        
 
     def broadcast(self, message):
         self._previous_messages.append(message)
         for recipient_conn_manager in self._conn_managers:
-            recipient_conn_manager.send_socket_message(message)
+            recipient_conn_manager.send_socket_message(message, False)
 
 
 
@@ -359,7 +425,7 @@ class ServerManager(object):
                 new_conn_manager.start_master()
                 self._conn_managers.append(new_conn_manager)
                 for message in self._previous_messages:
-                    new_conn_manager.send_socket_message(message)
+                    new_conn_manager.send_socket_message(message, False)
 
 
     def set_server(self, new_server):

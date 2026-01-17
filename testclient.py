@@ -77,7 +77,7 @@ def submit():
     query = entry.get()
     print(f"Submitted:{query}")
     if query != "":
-        my_conn_manager.send_socket_message(query)
+        my_conn_manager.send_socket_message(query, False)
 
 root = tk.Tk()
 root.title("Ambulance App")

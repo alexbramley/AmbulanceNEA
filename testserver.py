@@ -6,7 +6,7 @@ import sqlite3
 
 
 
-server = ss.Server(42072, "utf-8", "!DISCONN", "!HANDSHAKE")
+server = ss.Server(42073, "utf-8", "!DISCONN", "!HANDSHAKE")
 server.set_socket_status(True)
 print(server)
 
