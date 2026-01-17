@@ -5,7 +5,6 @@ import time
 import socket
 import datetime
 import sqlite3
-import os
 import queue
 
 WRONG_QUALIFICATION_PENALTY = 2000
@@ -26,7 +25,7 @@ class DatabaseManager:
         self._last_result = None
         self._lock = threading.Lock()  # protects _last_result
 
-    # ---------- public API ----------
+    
 
     def start(self):
         """Start the DB thread"""
@@ -57,7 +56,7 @@ class DatabaseManager:
         with self._lock:
             return self._last_result
 
-    # ---------- internal DB thread ----------
+    
 
     def _run(self):
         # single connection for this thread
@@ -94,7 +93,7 @@ class DatabaseManager:
             finally:
                 done_queue.put(True)
 
-    # ---------- table setup ----------
+    
 
     def _create_tables(self):
         if self._con:

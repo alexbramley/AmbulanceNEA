@@ -80,7 +80,7 @@ def submit():
         my_conn_manager.send_socket_message(query)
 
 root = tk.Tk()
-root.title("map app")
+root.title("Ambulance App")
 root.geometry("900x600")
 
 top_frame = tk.Frame(root)
@@ -95,7 +95,7 @@ submit_btn.pack()
 markers = {}
 paths = {}
 
-map_widget = TkinterMapView(root, width=900, height=500, corner_radius=0)
+map_widget = TkinterMapView(root, width=900, height=500, corner_radius=50)
 map_widget.pack(fill="both", expand=True, padx=10, pady=(0,10))
 
 map_widget.set_position(51.5074, -0.1278)
