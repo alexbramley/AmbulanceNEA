@@ -9,7 +9,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-
 # Logs and environment files
 *.log
 *.env
