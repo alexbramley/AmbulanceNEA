@@ -151,6 +151,8 @@ class ConnectionManager(object):
     """Handles a connection on a higher level than securesocket.SecureConnection"""
     def __init__(self):
         self.logged_in = False
+        self.crew_id = 0
+        self.ambulance_id = 0
         self._secure_connection = None
         self._newest_conn_msg = ""
         self.master_thread = None
@@ -171,10 +173,13 @@ class ConnectionManager(object):
                 if self._newest_conn_msg != new_conn_msg:
                     print("we got a brand new message")
                     self._newest_conn_msg = new_conn_msg
-                    self._newest_conn_command_data, self._newest_conn_argument_data = self._handle_conn_msg(self._newest_conn_msg)
+                    self._newest_conn_command_data, self._newest_conn_argument_data = self.handle_conn_msg(self._newest_conn_msg)
 
                     if self.logged_in:
                         try:
+                            if self._newest_conn_command_data[0] == "LOGOUT":
+                                SuperManager.get_server_manager().handle_logout_message(self)
+
                             SuperManager.get_entity_manager().handle_command(self._newest_conn_command_data, self._newest_conn_argument_data)
                         except Exception as e:
                             print(e)
@@ -209,7 +214,7 @@ class ConnectionManager(object):
         if self.master_thread != None:
             self.master_thread.join()
 
-    def _handle_conn_msg(self, message):
+    def handle_conn_msg(self, message):
         """Gets triggered when we get a new message, decodes the message command"""
         print(f"We got a message!! {message} is the message.")
 
@@ -218,7 +223,7 @@ class ConnectionManager(object):
             print(f"received command: {command_data[0]}")
             print(f"receiced data {command_data}, {argument_data}")
 
-            if command_data[-1] in self._previous_idempotency_keys:
+            if (command_data[-1] in self._previous_idempotency_keys) and not ("LOG" in command_data[0]):
                 raise Exception("Repeat idempotency key")
 
             self._previous_idempotency_keys.append(command_data[-1])
@@ -350,12 +355,13 @@ class ServerManager(object):
         # for recipient_conn_manager in self._conn_managers:
         #     recipient_conn_manager.send_socket_message(new_message)
     
-    def handle_login_message(self, connection_manager, command_data, argument_data):
+    def handle_login_message(self, connection_manager:ConnectionManager, command_data, argument_data):
         if command_data[0] != "LOGIN":
             return False
         
         try:
             dbm = SuperManager.get_database_manager()
+            enm = SuperManager.get_entity_manager()
 
             # <LOGIN>CrewID|CrewHashedPassword|AmbulanceCallSign
 
@@ -367,13 +373,28 @@ class ServerManager(object):
             if ambulance_exists:
                 print("That ambulance and crew combo exists in the database")
                 print("Login successful!!")
-                self.broadcast(f"<CREATE_ENTITY|ambulance|login{self._previous_combination_idempotency_key}>{int(argument_data[2][-3:])}|0|0|available|{argument_data[2]}")
-                self._previous_combination_idempotency_key += 1
-                self.broadcast(f"<CREATE_CREW|login{self._previous_combination_idempotency_key}>{int(argument_data[0][-3:])}")
-                self._previous_combination_idempotency_key += 1
-                self.broadcast(f"<ASSIGN_CREW|login{self._previous_combination_idempotency_key}>{int(argument_data[2][-3:])}|{int(argument_data[0][-3:])}")
-                self._previous_combination_idempotency_key += 1
 
+                connection_manager.crew_id = int(argument_data[0][-3:])
+                connection_manager.ambulance_id = int(argument_data[2][-3:])
+
+                message_to_send = f"<CREATE_ENTITY|ambulance|login{self._previous_combination_idempotency_key}>{int(argument_data[2][-3:])}|0|0|available|{argument_data[2]}"
+                self.broadcast(message_to_send)
+                self._previous_combination_idempotency_key += 1
+                new_cd, new_ad = connection_manager.handle_conn_msg(message_to_send)
+                enm.handle_command(new_cd, new_ad)
+
+                message_to_send = f"<CREATE_CREW|login{self._previous_combination_idempotency_key}>{int(argument_data[0][-3:])}"
+                self.broadcast(message_to_send)
+                self._previous_combination_idempotency_key += 1
+                new_cd, new_ad = connection_manager.handle_conn_msg(message_to_send)
+                enm.handle_command(new_cd, new_ad)
+
+                message_to_send = f"<ASSIGN_CREW|login{self._previous_combination_idempotency_key}>{int(argument_data[2][-3:])}|{int(argument_data[0][-3:])}"
+                self.broadcast(message_to_send)
+                self._previous_combination_idempotency_key += 1
+                new_cd, new_ad = connection_manager.handle_conn_msg(message_to_send)
+                enm.handle_command(new_cd, new_ad)
+                
                 return True
             
 
@@ -382,6 +403,25 @@ class ServerManager(object):
             return False
         
         return False
+    
+    def handle_logout_message(self, connection_manager:ConnectionManager):
+        enm = SuperManager.get_entity_manager()
+
+        message_to_send = f"<REMOVE_ENTITY|logout{self._previous_combination_idempotency_key}>{connection_manager.ambulance_id}"
+        self.broadcast(message_to_send)
+        self._previous_combination_idempotency_key += 1
+        new_cd, new_ad = connection_manager.handle_conn_msg(message_to_send)
+        enm.handle_command(new_cd, new_ad)
+
+        message_to_send = f"<REMOVE_CREW|logout{self._previous_combination_idempotency_key}>{connection_manager.ambulance_id}"
+        self.broadcast(message_to_send)
+        self._previous_combination_idempotency_key += 1
+        new_cd, new_ad = connection_manager.handle_conn_msg(message_to_send)
+        enm.handle_command(new_cd, new_ad)
+        
+        connection_manager.ambulance_id = 0
+        connection_manager.crew_id = 0
+        connection_manager.logged_in = False
         
 
     def broadcast(self, message):
@@ -859,37 +899,43 @@ class EntityManager(object):
         return assignments
 
     def create_crew(self, crew_id):
-        if SuperManager.get_is_server():
-            dbm = SuperManager.get_database_manager()
-            try:
-                dbm.execute(
-                    "SELECT 1 FROM AmbulanceCrew WHERE CrewID = ? LIMIT 1",
-                    ("CRW" + str(crew_id).rjust(3, "0"),)
-                )
-
-                crew_exists = dbm.get_last_result() is not None
-
-                if crew_exists:
+        try:
+            self.get_crew_by_id(crew_id)
+        except:
+            if SuperManager.get_is_server():
+                dbm = SuperManager.get_database_manager()
+                try:
                     dbm.execute(
-                        "SELECT CrewHashedPassword FROM AmbulanceCrew WHERE CrewID = ? LIMIT 1",
+                        "SELECT 1 FROM AmbulanceCrew WHERE CrewID = ? LIMIT 1",
                         ("CRW" + str(crew_id).rjust(3, "0"),)
                     )
-                    password_data = dbm.get_last_result()
-                    if password_data != None:
-                        password = password_data[0]
-                        print(password)
-                else:
-                    dbm.execute(
-                        "INSERT OR IGNORE INTO AmbulanceCrew(CrewID, AmbulanceCallSign, CrewHashedPassword) VALUES (?, ?, ?)",
-                        ("CRW" + str(crew_id).rjust(3, "0"),"AMB001","exapmlepassword",)
-                    )
-                    
-                    print("we made a record")
-            except Exception as e:
-                print("there was an error in the crew db operation")
-                print(type(e),e)
 
-        self._crews.append(AmbulanceCrew(crew_id))
+                    crew_exists = dbm.get_last_result() is not None
+
+                    if crew_exists:
+                        dbm.execute(
+                            "SELECT CrewHashedPassword FROM AmbulanceCrew WHERE CrewID = ? LIMIT 1",
+                            ("CRW" + str(crew_id).rjust(3, "0"),)
+                        )
+                        password_data = dbm.get_last_result()
+                        if password_data != None:
+                            password = password_data[0]
+                            print(password)
+                    else:
+                        dbm.execute(
+                            "INSERT OR IGNORE INTO AmbulanceCrew(CrewID, AmbulanceCallSign, CrewHashedPassword) VALUES (?, ?, ?)",
+                            ("CRW" + str(crew_id).rjust(3, "0"),"AMB001","exapmlepassword",)
+                        )
+                        
+                        print("we made a record")
+                except Exception as e:
+                    print("there was an error in the crew db operation")
+                    print(type(e),e)
+
+            self._crews.append(AmbulanceCrew(crew_id))
+            return
+        
+        raise Exception("A crew exists already with that id")
         # when we get the create crew command, we should check if a crew with that id exists in the db.
         # if so, we should check if the password given matches that crew's password
             # if yes, then create the crew
@@ -919,6 +965,10 @@ class EntityManager(object):
         ambulance.set_crew(crew)
         crew.set_ambulance(ambulance)
 
+    def remove_crew(self, crew_id:int):
+        crew = self.get_crew_by_id(crew_id)
+        self._crews.remove(crew)
+
     def handle_command(self, command_data, argument_data):
         """Executed correct method based on incoming command"""
         try:
@@ -942,6 +992,8 @@ class EntityManager(object):
                 self.get_entity_by_id(int(argument_data[0])).set_status(vehicle_states[argument_data[1]]) # argument_data: [0]=id, [1]=status_name
             elif command_data[0] == "CREATE_CREW":
                 self.create_crew(int(argument_data[0])) # argument_data: [0] = crew_id
+            elif command_data[0] == "REMOVE_CREW":
+                self.remove_crew(int(argument_data[0]))
             elif command_data[0] == "ASSIGN_CREW":
                 self.assign_crew(self.get_entity_by_id(int(argument_data[0])), self.get_crew_by_id(int(argument_data[1]))) # argument_data: [0]=ambulance_entity_id, [1]=crew_id
             elif command_data[0] == "ADD_QUALIFICATION": # can be done on emergencies or crews, specify in the command
@@ -973,9 +1025,9 @@ vehicle_states = {"available":VehicleState("Available"),
                   "handover":VehicleState("Shift handover")}
 
 vehicle_states["available"].set_next_states([vehicle_states["en_route"], vehicle_states["handover"]])
-vehicle_states["en_route"].set_next_states([vehicle_states["en_route"], vehicle_states["on_scene"]])
+vehicle_states["en_route"].set_next_states([vehicle_states["on_scene"]])
 vehicle_states["on_scene"].set_next_states([vehicle_states["returning_to_base"], vehicle_states["returning_to_hospital"]])
 vehicle_states["returning_to_hospital"].set_next_states([vehicle_states["unloading"]])
-vehicle_states["unloading"].set_next_states(["returning_to_base"])
+vehicle_states["unloading"].set_next_states([vehicle_states["returning_to_base"]])
 vehicle_states["returning_to_base"].set_next_states([vehicle_states["available"]])
 vehicle_states["handover"].set_next_states([vehicle_states["available"]])
