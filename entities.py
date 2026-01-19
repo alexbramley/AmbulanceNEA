@@ -394,6 +394,8 @@ class ServerManager(object):
                 self._previous_combination_idempotency_key += 1
                 new_cd, new_ad = connection_manager.handle_conn_msg(message_to_send)
                 enm.handle_command(new_cd, new_ad)
+
+                # TODO make this load data (like qualifications) from the database
                 
                 return True
             
@@ -406,6 +408,8 @@ class ServerManager(object):
     
     def handle_logout_message(self, connection_manager:ConnectionManager):
         enm = SuperManager.get_entity_manager()
+
+        # TODO make this save relevant data to the database
 
         message_to_send = f"<REMOVE_ENTITY|logout{self._previous_combination_idempotency_key}>{connection_manager.ambulance_id}"
         self.broadcast(message_to_send)
