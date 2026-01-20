@@ -10,6 +10,20 @@ import queue
 WRONG_QUALIFICATION_PENALTY = 2000
 DBPATH = "ambulancedata.db"
 
+qualifications = []
+def load_qualifications():
+    global qualifications
+    dbmanager = SuperManager.get_database_manager()
+
+    dbmanager.execute("SELECT * FROM Qualification", (), "all")
+    qual_data = dbmanager.get_last_result()
+
+    qualifications = []
+    if qual_data != None:
+        for qual in qual_data:
+            qualifications.append(Qualification(qual[0][-3:], qual[1]))
+
+    
 def init_db():
     con = sqlite3.connect(DBPATH, timeout=10)
     con.execute("PRAGMA journal_mode=WAL;")
@@ -40,26 +54,24 @@ class DatabaseManager:
         self._thread.join()
         
 
-    def execute(self, sql: str, params: tuple = ()):
+    def execute(self, sql: str, params: tuple = (), fetch: str | None = None):
         """
-        Submit an SQL command to run on the DB thread.
-        For SELECTs, fetchone() will be stored in _last_result.
-        For INSERT/UPDATE/DELETE, commits automatically.
+        fetch can be:
+        - None
+        - "one"
+        - "all"
         """
         done_queue = queue.Queue(maxsize=1)
-        self._job_queue.put((sql, params, done_queue))
-        # wait for job to complete
-        done_queue.get()
+        self._job_queue.put((sql, params, fetch, done_queue))
+        return done_queue.get()
+
 
     def get_last_result(self):
-        """Return the last fetchone() result"""
         with self._lock:
             return self._last_result
 
     
-
     def _run(self):
-        # single connection for this thread
         self._con = sqlite3.connect(DBPATH, timeout=5)
         self._con.execute("PRAGMA journal_mode=WAL;")
         self._con.execute("PRAGMA foreign_keys=ON;")
@@ -68,22 +80,25 @@ class DatabaseManager:
         while self._running:
             job = self._job_queue.get()
             if job is None:
-                if self._con:
-                    self._con.close()
+                self._con.close()
                 break
 
-            sql, params, done_queue = job
+            sql, params, fetch, done_queue = job
             try:
                 cur = self._con.cursor()
-                print(f"executing {sql} with params {params}")
                 cur.execute(sql, params)
-                print("executed!!")
+                print(f"executing ({sql}) with params ({params})")
 
-                if sql.strip().upper().startswith("SELECT"):
-                    with self._lock:
-                        self._last_result = cur.fetchone()
+                result = None
+                if fetch == "one":
+                    result = cur.fetchone()
+                elif fetch == "all":
+                    result = cur.fetchall()
                 else:
                     self._con.commit()
+
+                with self._lock:
+                    self._last_result = result
 
             except Exception as e:
                 print("DB Error:", e)
@@ -91,7 +106,7 @@ class DatabaseManager:
                     self._last_result = None
 
             finally:
-                done_queue.put(True)
+                done_queue.put(self._last_result)
 
     
 
@@ -112,6 +127,16 @@ class DatabaseManager:
                         REFERENCES Ambulance(AmbulanceCallSign)
                 )
             """)
+            cur.execute("""CREATE TABLE IF NOT EXISTS CallHandler(
+                        CallHandlerID TEXT PRIMARY KEY,
+                        CallHandlerHashedPassword TEXT
+                        )
+                        """)
+            cur.execute("""CREATE TABLE IF NOT EXISTS Qualification(
+                        QualificationID TEXT PRIMARY KEY,
+                        QualificationName INT
+                        )
+                        """)
             self._con.commit()
         else:
             raise Exception("databasemanager._con is set as None")
@@ -153,6 +178,7 @@ class ConnectionManager(object):
         self.logged_in = False
         self.crew_id = 0
         self.ambulance_id = 0
+        self.callhandler_id = 0
         self._secure_connection = None
         self._newest_conn_msg = ""
         self.master_thread = None
@@ -165,6 +191,7 @@ class ConnectionManager(object):
 
     def _master(self):
         """The main loop of handling new messages from the connection"""
+        global qualifications
         print("Starting master ConnectionManager thread...")
         while self._master_active:
             time.sleep(0.1)
@@ -175,22 +202,35 @@ class ConnectionManager(object):
                     self._newest_conn_msg = new_conn_msg
                     self._newest_conn_command_data, self._newest_conn_argument_data = self.handle_conn_msg(self._newest_conn_msg)
 
+                    if self._newest_conn_command_data[0] == "NEW_QUALIFICATION":
+                        
+                        qualifications.append(Qualification(int(self._newest_conn_argument_data[0]), self._newest_conn_argument_data[1]))
+                        print(qualifications)
+
                     if self.logged_in:
                         try:
                             if self._newest_conn_command_data[0] == "LOGOUT":
                                 SuperManager.get_server_manager().handle_logout_message(self)
+                            else:
+                                SuperManager.get_entity_manager().handle_command(self._newest_conn_command_data, self._newest_conn_argument_data)
 
-                            SuperManager.get_entity_manager().handle_command(self._newest_conn_command_data, self._newest_conn_argument_data)
+                                if SuperManager.get_is_server() == True:
+                                    SuperManager.get_server_manager().handle_connection_message(self, self._newest_conn_msg, self._newest_conn_command_data, self._newest_conn_argument_data)
                         except Exception as e:
                             print(e)
                         
-                        if SuperManager.get_is_server() == True:
-                            SuperManager.get_server_manager().handle_connection_message(self, self._newest_conn_msg, self._newest_conn_command_data, self._newest_conn_argument_data)
+                        
                     else:
                         if SuperManager.get_is_server():
                             self.logged_in = SuperManager.get_server_manager().handle_login_message(self, self._newest_conn_command_data, self._newest_conn_argument_data)
                             if self.logged_in:
                                 self.send_socket_message("<LOGIN_SUCCESS>", True)
+
+                                # UPDATE NEWLY LOGGED IN CLIENT ON QUALIFICATION LIST
+                                
+                                for qualification in qualifications:
+                                    self.send_socket_message(f"<NEW_QUALIFICATION>{qualification.get_id()}|{qualification.get_name()}", True)
+
                                 self._send_login_message_queue()
                             else:
                                 self.send_socket_message("<LOGIN_FAILURE>", True)
@@ -223,7 +263,7 @@ class ConnectionManager(object):
             print(f"received command: {command_data[0]}")
             print(f"receiced data {command_data}, {argument_data}")
 
-            if (command_data[-1] in self._previous_idempotency_keys) and not ("LOG" in command_data[0]):
+            if (command_data[-1] in self._previous_idempotency_keys) and not ("LOG" in command_data[0] or "NEW_QUALIFICATION" == command_data[0]):
                 raise Exception("Repeat idempotency key")
 
             self._previous_idempotency_keys.append(command_data[-1])
@@ -360,45 +400,66 @@ class ServerManager(object):
             return False
         
         try:
+            
             dbm = SuperManager.get_database_manager()
             enm = SuperManager.get_entity_manager()
 
-            # <LOGIN>CrewID|CrewHashedPassword|AmbulanceCallSign
+            if argument_data[0][:3] == "CRW":
+                print("a crew is attempting login")
+                # <LOGIN>CrewID|CrewHashedPassword|AmbulanceCallSign
 
-            dbm.execute("SELECT 1 FROM Ambulance, AmbulanceCrew WHERE Ambulance.AmbulanceCallSign = ? AND AmbulanceCrew.AmbulanceCallSign = ? AND AmbulanceCrew.CrewID = ? AND AmbulanceCrew.CrewHashedPassword = ? LIMIT 1",
-                                (argument_data[2], argument_data[2], argument_data[0], argument_data[1]))
-            
-            ambulance_exists = dbm.get_last_result() is not None
-
-            if ambulance_exists:
-                print("That ambulance and crew combo exists in the database")
-                print("Login successful!!")
-
-                connection_manager.crew_id = int(argument_data[0][-3:])
-                connection_manager.ambulance_id = int(argument_data[2][-3:])
-
-                message_to_send = f"<CREATE_ENTITY|ambulance|login{self._previous_combination_idempotency_key}>{int(argument_data[2][-3:])}|0|0|available|{argument_data[2]}"
-                self.broadcast(message_to_send)
-                self._previous_combination_idempotency_key += 1
-                new_cd, new_ad = connection_manager.handle_conn_msg(message_to_send)
-                enm.handle_command(new_cd, new_ad)
-
-                message_to_send = f"<CREATE_CREW|login{self._previous_combination_idempotency_key}>{int(argument_data[0][-3:])}"
-                self.broadcast(message_to_send)
-                self._previous_combination_idempotency_key += 1
-                new_cd, new_ad = connection_manager.handle_conn_msg(message_to_send)
-                enm.handle_command(new_cd, new_ad)
-
-                message_to_send = f"<ASSIGN_CREW|login{self._previous_combination_idempotency_key}>{int(argument_data[2][-3:])}|{int(argument_data[0][-3:])}"
-                self.broadcast(message_to_send)
-                self._previous_combination_idempotency_key += 1
-                new_cd, new_ad = connection_manager.handle_conn_msg(message_to_send)
-                enm.handle_command(new_cd, new_ad)
-
-                # TODO make this load data (like qualifications) from the database
+                dbm.execute("SELECT 1 FROM Ambulance, AmbulanceCrew WHERE Ambulance.AmbulanceCallSign = ? AND AmbulanceCrew.AmbulanceCallSign = ? AND AmbulanceCrew.CrewID = ? AND AmbulanceCrew.CrewHashedPassword = ? LIMIT 1",
+                                    (argument_data[2], argument_data[2], argument_data[0], argument_data[1]),
+                                    "one")
                 
-                return True
-            
+                ambulance_exists = dbm.get_last_result() is not None
+
+                if ambulance_exists:
+                    print("That ambulance and crew combo exists in the database")
+                    print("Login successful!!")
+
+                    connection_manager.crew_id = int(argument_data[0][-3:])
+                    connection_manager.ambulance_id = int(argument_data[2][-3:])
+
+                    message_to_send = f"<CREATE_ENTITY|ambulance|login{self._previous_combination_idempotency_key}>{int(argument_data[2][-3:])}|0|0|available|{argument_data[2]}"
+                    self.broadcast(message_to_send)
+                    self._previous_combination_idempotency_key += 1
+                    new_cd, new_ad = connection_manager.handle_conn_msg(message_to_send)
+                    enm.handle_command(new_cd, new_ad)
+
+                    message_to_send = f"<CREATE_CREW|login{self._previous_combination_idempotency_key}>{int(argument_data[0][-3:])}"
+                    self.broadcast(message_to_send)
+                    self._previous_combination_idempotency_key += 1
+                    new_cd, new_ad = connection_manager.handle_conn_msg(message_to_send)
+                    enm.handle_command(new_cd, new_ad)
+
+                    message_to_send = f"<ASSIGN_CREW|login{self._previous_combination_idempotency_key}>{int(argument_data[2][-3:])}|{int(argument_data[0][-3:])}"
+                    self.broadcast(message_to_send)
+                    self._previous_combination_idempotency_key += 1
+                    new_cd, new_ad = connection_manager.handle_conn_msg(message_to_send)
+                    enm.handle_command(new_cd, new_ad)
+
+                    # TODO make this load data (like qualifications) from the database
+                    return True
+                else:
+                    return False
+
+            elif argument_data[0][:3] == "CLH":
+                print("a call handler is attempting login")
+                # <LOGIN>CallHandlerID|CallHandlerHashedPassword|
+
+                dbm.execute("SELECT 1 FROM CallHandler WHERE CallHandlerID = ? AND CallHandlerHashedPassword = ? LIMIT 1",
+                            (argument_data[0], argument_data[1]),
+                            "one")
+                
+                callhandler_exists = dbm.get_last_result is not None
+
+                if callhandler_exists:
+                    return True
+                else:
+                    return False
+            else:
+                return False
 
         except Exception as e:
             print(e)
@@ -612,7 +673,7 @@ class Emergency(Entity):
     def __repr__(self):
         return "Emergency "+super().__repr__()
 
-    def __init__(self, entity_id, position: vectors.Vector2, severity:int):
+    def __init__(self, entity_id, position: vectors.Vector2, severity:int, injury:str, description:str):
         super().__init__(entity_id, position)
         self._severity = severity
         self._qualifications = []
@@ -620,6 +681,8 @@ class Emergency(Entity):
         self._start_time = None
         self._end_time = None
         self._ambulance_required = True
+        self.injury = injury
+        self.description = description
 
 
 
@@ -679,7 +742,8 @@ class EntityManager(object):
                         dbm = SuperManager.get_database_manager()
 
                         dbm.execute("SELECT 1 FROM Ambulance WHERE AmbulanceCallSign = ? LIMIT 1",
-                                           (kwargs["callsign"],))
+                                           (kwargs["callsign"],),
+                                           "one")
                         ambulance_exists = dbm.get_last_result() is not None
 
                         if ambulance_exists:
@@ -699,7 +763,7 @@ class EntityManager(object):
 
                 new_entity = Ambulance(kwargs["entity_id"], kwargs["position"], vehicle_states[kwargs["status"]], kwargs["callsign"])
             elif kwargs["entity_type"] == "emergency":
-                new_entity = Emergency(kwargs["entity_id"], kwargs["position"], kwargs["severity"])
+                new_entity = Emergency(kwargs["entity_id"], kwargs["position"], kwargs["severity"], kwargs["injury"], kwargs["description"])
                 new_entity.set_start_time(datetime.datetime.now())
             else:
                 raise Exception("Entity type invalid!")
@@ -911,7 +975,8 @@ class EntityManager(object):
                 try:
                     dbm.execute(
                         "SELECT 1 FROM AmbulanceCrew WHERE CrewID = ? LIMIT 1",
-                        ("CRW" + str(crew_id).rjust(3, "0"),)
+                        ("CRW" + str(crew_id).rjust(3, "0"),),
+                        "one"
                     )
 
                     crew_exists = dbm.get_last_result() is not None
@@ -919,7 +984,8 @@ class EntityManager(object):
                     if crew_exists:
                         dbm.execute(
                             "SELECT CrewHashedPassword FROM AmbulanceCrew WHERE CrewID = ? LIMIT 1",
-                            ("CRW" + str(crew_id).rjust(3, "0"),)
+                            ("CRW" + str(crew_id).rjust(3, "0"),),
+                            "one"
                         )
                         password_data = dbm.get_last_result()
                         if password_data != None:
@@ -980,7 +1046,7 @@ class EntityManager(object):
                 if command_data[1] == "ambulance":
                     self.add_new_entity(entity_id=int(argument_data[0]), entity_type=command_data[1], position=vectors.Vector2(float(argument_data[1]), float(argument_data[2])), status=argument_data[3], callsign=argument_data[4]) # command_data: [1]=entitytype argument_data: [0]=id, [1]=xpos, [2]=ypos
                 elif command_data[1] == "emergency":
-                    self.add_new_entity(entity_id=int(argument_data[0]), entity_type=command_data[1], position=vectors.Vector2(float(argument_data[1]), float(argument_data[2])), severity=int(argument_data[3])) # argument_data[3]=severity
+                    self.add_new_entity(entity_id=int(argument_data[0]), entity_type=command_data[1], position=vectors.Vector2(float(argument_data[1]), float(argument_data[2])), severity=int(argument_data[3]), injury=argument_data[4], description=argument_data[5]) # argument_data[3]=severity, [4]=injury, [5]=description
                 else:
                     self.add_new_entity(entity_id=int(argument_data[0]), entity_type=command_data[1], position=vectors.Vector2(float(argument_data[1]), float(argument_data[2])))
                 print("we added a new entity")
@@ -1001,11 +1067,16 @@ class EntityManager(object):
             elif command_data[0] == "ASSIGN_CREW":
                 self.assign_crew(self.get_entity_by_id(int(argument_data[0])), self.get_crew_by_id(int(argument_data[1]))) # argument_data: [0]=ambulance_entity_id, [1]=crew_id
             elif command_data[0] == "ADD_QUALIFICATION": # can be done on emergencies or crews, specify in the command
+                
+                qualification = None
+                for qual in qualifications:
+                    if qual.get_id() == int(argument_data[1]):
+                        qualification = qual
                 if command_data[1] == "crew":
-                    self.get_crew_by_id(int(argument_data[0])).add_qualification(qualifications[int(argument_data[1])]) # argument_data: [0]=crew_id, [1]=qualification_id
+                    self.get_crew_by_id(int(argument_data[0])).add_qualification(qualification) # argument_data: [0]=crew_id, [1]=qualification_id
                 elif command_data[1] == "emergency":
                     print("attempting to add new qualification")
-                    self.get_entity_by_id(int(argument_data[0])).add_qualification(qualifications[int(argument_data[1])]) # argument_data: [0]=entity_id, [1]=qualification_id
+                    self.get_entity_by_id(int(argument_data[0])).add_qualification(qualification) # argument_data: [0]=entity_id, [1]=qualification_id
                 else:
                     raise Exception("You can only add a qualification to an emergency (as a requirement) or to a crew (as an achieved qualification).")
             else:
@@ -1013,12 +1084,6 @@ class EntityManager(object):
         except Exception as e:
             print(e)
 
-
-
-
-
-qualifications = {0:Qualification(0,"Example Qualification 1"),
-                  1:Qualification(1,"Exapmle Qualification 2")}
 
 vehicle_states = {"available":VehicleState("Available"),
                   "en_route":VehicleState("En route"),

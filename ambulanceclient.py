@@ -24,6 +24,10 @@ my_ambulance_callsign = ""
 my_ambulance_id = 0
 my_crew_login = ""
 my_crew_id = 0
+my_callhandler_login = ""
+my_callhandler_id = 0
+
+my_destination = None
 
 
 try:
@@ -39,7 +43,7 @@ except:
 
 def connect_to_server():
     client = ss.Client(
-        42075,
+        42078,
         "utf-8",
         "!DISCONN",
         "!HANDSHAKE",
@@ -59,7 +63,15 @@ def connect_to_server():
     my_conn_manager.set_secure_connection(client.get_conn())
     my_conn_manager.start_master()
 
+previous_quals = []
 
+def update_quals():
+    while True:
+        global previous_quals
+        time.sleep(1)
+        if previous_quals != en.qualifications:
+            call_handler.rebuild_qual_checkboxes(en.qualifications)
+            previous_quals = en.qualifications
 
 def update_map_entities():
     while True:
@@ -67,6 +79,11 @@ def update_map_entities():
         time.sleep(1)
         try:
             main.update_current_status()
+            global my_destination
+            my_destination = my_entity_manager.get_entity_by_id(my_ambulance_id).get_destination()
+            if type(my_destination) == en.Emergency:
+                main.set_description(my_destination.description)
+
         except Exception as e:
             print(f"THERE WAS AN EXCEPTION\n{e}")
         for entity in my_entity_manager.get_entites():
@@ -162,14 +179,17 @@ class LoginFrame(tk.Frame):
         super().__init__(master)
         self.controller = controller
 
-        tk.Label(self, text="Server Login", font=("Arial", 22)).pack(pady=40)
+        tk.Label(self, text="Login", font=("Arial", 22)).pack(pady=40)
 
         self.username = tk.Entry(self)
         self.callsign = tk.Entry(self)
         self.password = tk.Entry(self, show="*")
 
+        tk.Label(self, text="Crew ID or Call Handler ID", font=("Arial", 12, "bold")).pack(pady=5)
         self.username.pack(pady=5)
+        tk.Label(self, text="Ambulance Callsign (if applicable)", font=("Arial", 12, "bold")).pack(pady=5)
         self.callsign.pack(pady=5)
+        tk.Label(self, text="Password", font=("Arial", 12, "bold")).pack(pady=5)
         self.password.pack(pady=5)
 
         self.status = tk.Label(self, text="")
@@ -182,7 +202,7 @@ class LoginFrame(tk.Frame):
         clsgn = self.callsign.get()
         pwd = self.password.get()
 
-        if not user or not pwd or not clsgn:
+        if not user or not pwd:
             self.status.config(text="Missing fields", fg="red")
             return
 
@@ -199,30 +219,48 @@ class LoginFrame(tk.Frame):
             args=(clsgn, user)
         ).start()
 
-    def wait_for_auth(self, ambulance_callsign, crew_login):
+    def wait_for_auth(self, ambulance_callsign, user_login):
         time.sleep(1.0)
 
 
         if my_conn_manager.logged_in:
+            if user_login[:3] == "CRW":
+                global my_ambulance_callsign
+                global my_ambulance_id
+                global my_crew_login
+                global my_crew_id
+                my_ambulance_callsign = ambulance_callsign
+                my_ambulance_id = int(ambulance_callsign[-3:])
+                my_crew_login = user_login
+                my_crew_id = int(user_login[-3:])
+                
+                self.master.after(0, self.success_main_page)
+            elif user_login[:3] == "CLH":
+                global my_callhandler_login
+                global my_callhandler_id
+                my_callhandler_login = user_login
+                my_callhandler_id = int(user_login[-3:])
 
-            global my_ambulance_callsign
-            global my_ambulance_id
-            global my_crew_login
-            global my_crew_id
-            my_ambulance_callsign = ambulance_callsign
-            my_ambulance_id = int(ambulance_callsign[-3:])
-            my_crew_login = crew_login
-            my_crew_id = int(crew_login[-3:])
-            
-            self.master.after(0, self.success)
+                self.master.after(0, self.success_callhandler_page)
+            else:
+                self.master.after(0, self.fail)
+
         else:
             self.master.after(0, self.fail)
 
-    def success(self):
+    def success_main_page(self):
         self.controller.show_frame("main")
 
         threading.Thread(
             target=update_map_entities,
+            daemon=True
+        ).start()
+
+    def success_callhandler_page(self):
+        self.controller.show_frame("call_handler")
+
+        threading.Thread(
+            target=update_quals,
             daemon=True
         ).start()
 
@@ -347,11 +385,12 @@ class MainFrame(tk.Frame):
             text="Update",
             command=self.update_status
         ).pack(side="left", padx=(5, 0))
+
     
-    def set_description(self, text):
+    def set_description(self, new_text):
         self.description.config(state="normal")
         self.description.delete("1.0", tk.END)
-        self.description.insert(tk.END, text)
+        self.description.insert(tk.END, new_text)
         self.description.config(state="disabled")
 
     def update_current_status(self):
@@ -438,6 +477,146 @@ class MainFrame(tk.Frame):
         )
         previous_idempotency_key += 1
 
+class CallHandlerFrame(tk.Frame):
+    def __init__(self, master, controller):
+        super().__init__(master)
+        self.controller = controller
+
+        tk.Label(self, text="Call Handler", font=("Arial", 22)).pack(pady=20)
+
+        form = tk.Frame(self)
+        form.pack(pady=10)
+
+        # ---------- INJURY ----------
+        tk.Label(form, text="Injury Type").grid(row=0, column=0, sticky="w")
+        self.injury_entry = tk.Entry(form, width=30)
+        self.injury_entry.grid(row=0, column=1, pady=5)
+
+        # ---------- SEVERITY ----------
+        tk.Label(form, text="Category").grid(row=1, column=0, sticky="w")
+        self.category_var = tk.IntVar(value=3)
+        tk.Spinbox(
+            form,
+            from_=1,
+            to=5,
+            textvariable=self.category_var,
+            width=5
+        ).grid(row=1, column=1, sticky="w", pady=5)
+
+        # ---------- COORDINATES ----------
+        tk.Label(form, text="Latitude").grid(row=2, column=0, sticky="w")
+        self.lat_entry = tk.Entry(form)
+        self.lat_entry.grid(row=2, column=1, pady=5)
+
+        tk.Label(form, text="Longitude").grid(row=3, column=0, sticky="w")
+        self.lon_entry = tk.Entry(form)
+        self.lon_entry.grid(row=3, column=1, pady=5)
+
+        # ---------- DESCRIPTION ----------
+        tk.Label(self, text="Description").pack(anchor="w", padx=40, pady=(15, 0))
+        self.desc_box = tk.Text(self, height=5, wrap="word")
+        self.desc_box.pack(fill="x", padx=40, pady=5)
+
+        # QUALIFICATIONS CHECKBOXES
+
+        self.qual_frame = tk.Frame(self)
+        self.qual_frame.pack(anchor="w", padx=40, pady=10)
+
+
+        options = []
+        for qual in en.qualifications:
+            options.append(qual.get_name())        
+
+        print(f"options: {options}")
+        
+        self.bool_vars = {}
+        for opt in options:
+            v = tk.BooleanVar()
+            tk.Checkbutton(self.qual_frame, text=opt, variable=v).pack(anchor="w")
+            self.bool_vars[opt] = v
+
+        # ---------- BUTTONS ----------
+        btns = tk.Frame(self)
+        btns.pack(pady=20)
+
+        tk.Button(
+            btns,
+            text="Submit Emergency",
+            command=self.submit_emergency
+        ).pack(side="left", padx=10)
+
+        
+
+    def rebuild_qual_checkboxes(self, qualifications):
+        print("updating qualifications...")
+        for w in self.qual_frame.winfo_children():
+            w.destroy()
+        
+        self.bool_vars = {}
+        self.checks = {}
+
+        options = []
+        for qual in qualifications:
+            options.append(qual.get_name())
+
+        print(options)
+
+
+        for opt in options:
+            v = tk.BooleanVar()
+            cb = tk.Checkbutton(self.qual_frame, text=opt, variable=v)
+            cb.pack(anchor="w")
+            self.bool_vars[opt] = v
+            self.checks[opt] = cb
+
+
+    def submit_emergency(self):
+        injury = self.injury_entry.get()
+        severity = int(100-(20 * self.category_var.get()))
+        lat = self.lat_entry.get()
+        lon = self.lon_entry.get()
+        desc = self.desc_box.get("1.0", tk.END).strip()
+
+        selected_qual_names = [opt for opt, v in self.bool_vars.items() if v.get()]
+        
+
+        if not injury or not lat or not lon:
+            print("Missing fields")
+            return
+
+        try:
+            lat = float(lat)
+            lon = float(lon)
+        except ValueError:
+            print("Invalid coordinates")
+            return
+
+        global previous_idempotency_key
+
+        message = (
+            f"<CREATE_ENTITY|emergency|newemergency{previous_idempotency_key}>{int(str(my_callhandler_id).rjust(3,"0")+str(previous_idempotency_key).rjust(3,"0"))}|{lat}|{lon}|{severity}|{injury}|{desc}"
+        )
+        
+        my_conn_manager.send_socket_message(message, False)
+
+        counter = 1
+        for name in selected_qual_names:
+            for qual in en.qualifications:
+                if qual.get_name() == name:
+                    my_conn_manager.send_socket_message(f"<ADD_QUALIFICATION|emergency|addnewemergency{previous_idempotency_key+counter}>{int(str(my_callhandler_id).rjust(3,"0")+str(previous_idempotency_key).rjust(3,"0"))}|{qual.get_id()}",False)
+                    break
+            counter += 1
+
+        previous_idempotency_key += 1+counter
+
+        print("Emergency sent")
+
+        # clear form
+        self.injury_entry.delete(0, tk.END)
+        self.lat_entry.delete(0, tk.END)
+        self.lon_entry.delete(0, tk.END)
+        self.desc_box.delete("1.0", tk.END)
+
 
 
 # =========================
@@ -448,14 +627,21 @@ connect_to_server()
 
 app = App()
 
+
+
+
+
 login = LoginFrame(app, app)
 main = MainFrame(app, app)
+call_handler = CallHandlerFrame(app, app)
 
 app.frames["login"] = login
 app.frames["main"] = main
+app.frames["call_handler"] = call_handler
 
 login.place(relwidth=1, relheight=1)
 main.place(relwidth=1, relheight=1)
+call_handler.place(relwidth=1, relheight=1)
 
 app.show_frame("login")
 app.mainloop()
