@@ -494,7 +494,7 @@ class CallHandlerFrame(tk.Frame):
 
         # ---------- SEVERITY ----------
         tk.Label(form, text="Category").grid(row=1, column=0, sticky="w")
-        self.category_var = tk.IntVar(value=3)
+        self.category_var = tk.IntVar(value=1)
         tk.Spinbox(
             form,
             from_=1,

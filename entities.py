@@ -132,9 +132,19 @@ class DatabaseManager:
                         CallHandlerHashedPassword TEXT
                         )
                         """)
-            cur.execute("""CREATE TABLE IF NOT EXISTS Qualification(
+            cur.execute("""
+                        CREATE TABLE IF NOT EXISTS Qualification(
                         QualificationID TEXT PRIMARY KEY,
                         QualificationName INT
+                        )
+                        """)
+            cur.execute("""
+                        CREATE TABLE IF NOT EXISTS AchievedQualification(
+                        CrewID TEXT,
+                        QualificationID TEXT,
+                        PRIMARY KEY (CrewID, QualificationID),
+                        FOREIGN KEY (CrewID) REFERENCES AmbulanceCrew(CrewID),
+                        FOREIGN KEY (QualificationID) REFERENCES Qualification(QualificationID)
                         )
                         """)
             self._con.commit()
@@ -440,6 +450,22 @@ class ServerManager(object):
                     enm.handle_command(new_cd, new_ad)
 
                     # TODO make this load data (like qualifications) from the database
+
+                    dbm.execute("SELECT Qualification.QualificationID FROM Qualification, AchievedQualification WHERE Qualification.QualificationID = AchievedQualification.QualificationID AND AchievedQualification.CrewID = ?",
+                                (argument_data[0],),
+                                "all")
+                    achieved_quals = dbm.get_last_result()
+                    print(achieved_quals)
+                    if achieved_quals != None:
+                        for achieved_qual in achieved_quals:
+                            message_to_send = f"<ADD_QUALIFICATION|crew|login{self._previous_combination_idempotency_key}>{int(argument_data[0][-3:])}|{int(achieved_qual[0][-3:])}"
+                            self.broadcast(message_to_send)
+                            self._previous_combination_idempotency_key += 1
+                            new_cd, new_ad = connection_manager.handle_conn_msg(message_to_send)
+                            enm.handle_command(new_cd, new_ad)
+
+
+
                     return True
                 else:
                     return False

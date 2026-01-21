@@ -34,6 +34,7 @@ my_database_manager.execute("INSERT OR IGNORE INTO CallHandler(CallHandlerID, Ca
 my_database_manager.execute("INSERT OR IGNORE INTO CallHandler(CallHandlerID, CallHandlerHashedPassword) VALUES (?, ?)", ("CLH002","exapmlepassword"))
 my_database_manager.execute("INSERT OR IGNORE INTO Qualification(QualificationID, QualificationName) VALUES (?, ?)", ("QUL001","example_qual1"))
 my_database_manager.execute("INSERT OR IGNORE INTO Qualification(QualificationID, QualificationName) VALUES (?, ?)", ("QUL002","example_qual2"))
+my_database_manager.execute("INSERT OR IGNORE INTO AchievedQualification(CrewID, QualificationID) VALUES(?, ?)", ("CRW001", "QUL001"))
 
 
 input()
