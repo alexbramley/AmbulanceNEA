@@ -4,11 +4,17 @@ import threading
 import time
 import socket
 import datetime
-import sqlite3
+from pysqlcipher3 import dbapi2 as sqlite3
 import queue
+import os
+import bcrypt
+from dotenv import load_dotenv
 
 WRONG_QUALIFICATION_PENALTY = 2000
 DBPATH = "ambulancedata.db"
+
+load_dotenv()
+DBKEY = os.environ["DB_KEY"]
 
 qualifications = []
 def load_qualifications():
@@ -25,7 +31,8 @@ def load_qualifications():
 
     
 def init_db():
-    con = sqlite3.connect(DBPATH, timeout=10)
+    con = sqlite3.connect(DBPATH, timeout=10) # type: ignore
+    con.execute(f"PRAGMA key = '{DBKEY}'")
     con.execute("PRAGMA journal_mode=WAL;")
     con.execute("PRAGMA foreign_keys=ON;")
     con.close()
@@ -72,7 +79,8 @@ class DatabaseManager:
 
     
     def _run(self):
-        self._con = sqlite3.connect(DBPATH, timeout=5)
+        self._con = sqlite3.connect(DBPATH, timeout=5) # type: ignore
+        self._con.execute(f"PRAGMA key = '{DBKEY}'")
         self._con.execute("PRAGMA journal_mode=WAL;")
         self._con.execute("PRAGMA foreign_keys=ON;")
         self._create_tables()
@@ -416,16 +424,22 @@ class ServerManager(object):
 
             if argument_data[0][:3] == "CRW":
                 print("a crew is attempting login")
-                # <LOGIN>CrewID|CrewHashedPassword|AmbulanceCallSign
+                # <LOGIN>CrewID|CrewPassword|AmbulanceCallSign
 
-                dbm.execute("SELECT 1 FROM Ambulance, AmbulanceCrew WHERE Ambulance.AmbulanceCallSign = ? AND AmbulanceCrew.AmbulanceCallSign = ? AND AmbulanceCrew.CrewID = ? AND AmbulanceCrew.CrewHashedPassword = ? LIMIT 1",
-                                    (argument_data[2], argument_data[2], argument_data[0], argument_data[1]),
+                dbm.execute("SELECT AmbulanceCrew.CrewHashedPassword FROM Ambulance, AmbulanceCrew WHERE Ambulance.AmbulanceCallSign = ? AND AmbulanceCrew.AmbulanceCallSign = ? AND AmbulanceCrew.CrewID = ? LIMIT 1",
+                                    (argument_data[2], argument_data[2], argument_data[0]),
                                     "one")
                 
-                ambulance_exists = dbm.get_last_result() is not None
+                last_result = dbm.get_last_result()
+                ambulance_exists = last_result is not None
 
                 if ambulance_exists:
                     print("That ambulance and crew combo exists in the database")
+
+                    if not bcrypt.checkpw(argument_data[1].encode("utf-8"), last_result[0]):
+                        print("incorrect password!!")
+                        return False
+
                     print("Login successful!!")
 
                     connection_manager.crew_id = int(argument_data[0][-3:])
@@ -474,13 +488,17 @@ class ServerManager(object):
                 print("a call handler is attempting login")
                 # <LOGIN>CallHandlerID|CallHandlerHashedPassword|
 
-                dbm.execute("SELECT 1 FROM CallHandler WHERE CallHandlerID = ? AND CallHandlerHashedPassword = ? LIMIT 1",
-                            (argument_data[0], argument_data[1]),
+                dbm.execute("SELECT CallHandlerHashedPassword FROM CallHandler WHERE CallHandlerID = ? LIMIT 1",
+                            (argument_data[0],),
                             "one")
                 
-                callhandler_exists = dbm.get_last_result is not None
+                last_result = dbm.get_last_result()
+                callhandler_exists = last_result is not None
 
                 if callhandler_exists:
+                    if not bcrypt.checkpw(argument_data[1].encode("utf-8"), last_result[0]):
+                        print("incorrect password!!")
+                        return False
                     return True
                 else:
                     return False
