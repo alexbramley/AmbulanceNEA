@@ -43,7 +43,7 @@ except:
 
 def connect_to_server():
     client = ss.Client(
-        42073,
+        42074,
         "utf-8",
         "!DISCONN",
         "!HANDSHAKE",
