@@ -29,6 +29,23 @@ def load_qualifications():
         for qual in qual_data:
             qualifications.append(Qualification(qual[0][-3:], qual[1]))
 
+hospitals = []
+def load_hospitals():
+    print("Loading hospitals...")
+    global hospitals
+    dbmanager = SuperManager.get_database_manager()
+
+    dbmanager.execute("SELECT * FROM Hospital", (), "all")
+    hospital_data = dbmanager.get_last_result()
+    print(f"retrieved data {hospital_data}")
+    hospitals = []
+    if hospital_data != None:
+        for hospital in hospital_data:
+            print(f"doing hospital {hospital}")
+            SuperManager.get_server_manager().broadcast(f"<CREATE_ENTITY|hospital|loadhospital{hospital[0]}>{int("002"+"000"+hospital[0][-3:])}|{float(hospital[2])}|{float(hospital[3])}")
+            SuperManager.get_entity_manager().add_new_entity(entity_type="hospital", entity_id=int("002"+"000"+hospital[0][-3:]), position=vectors.Vector2(float(hospital[2]), float(hospital[3])))
+            
+
     
 def init_db():
     con = sqlite3.connect(DBPATH, timeout=10) # type: ignore
@@ -155,6 +172,12 @@ class DatabaseManager:
                         FOREIGN KEY (QualificationID) REFERENCES Qualification(QualificationID)
                         )
                         """)
+            cur.execute("""CREATE TABLE IF NOT EXISTS Hospital(
+                        HospitalID TEXT PRIMARY KEY,
+                        HospitalName TEXT,
+                        HospitalLat REAL,
+                        HospitalLon REAL
+                        )""")
             self._con.commit()
         else:
             raise Exception("databasemanager._con is set as None")
@@ -531,7 +554,6 @@ class ServerManager(object):
         connection_manager.ambulance_id = 0
         connection_manager.crew_id = 0
         connection_manager.logged_in = False
-        
 
     def broadcast(self, message):
         self._previous_messages.append(message)
@@ -703,7 +725,9 @@ class Ambulance(Entity):
         elif new_status == vehicle_states["returning_to_hospital"] or new_status == vehicle_states["returning_to_base"]:
             if type(self._destination) == Emergency:
                 SuperManager.get_entity_manager().remove_entity(self._destination)
-                self._destination = self # TODO set destination to be hospital or base or somethign
+            self._destination = self # TODO set destination to be hospital or base or somethign
+            # if new_status == vehicle_states["returning_to_hospital"]:
+            #     self._destination = SuperManager.get_entity_manager().get_closest_hospital(self.get_position()) # TODO fix this!!
         self._status = new_status
 
     def get_speed(self):
@@ -831,6 +855,23 @@ class EntityManager(object):
             self._entites.append(new_entity)
         else:
             raise Exception("Cannot add entity as there is already an entity with that id.")
+
+    def get_entities_by_type(self, entity_type):
+        entities = []
+        for entity in self._entites:
+            if type(entity) == entity_type:
+                entities.append(entity)
+        return entities
+    
+    def get_closest_hospital(self, position):
+        closest_hospital = None
+        for hospital in self.get_entities_by_type(Hostpital):
+            if closest_hospital == None:
+                closest_hospital = hospital
+            elif vectors.Vector2.Magnitude(vectors.Vector2.Add(hospital.get_position(), -position)) < vectors.Vector2.Magnitude(vectors.Vector2.Add(closest_hospital.get_position(), -position)):
+                closest_hospital = hospital
+        return closest_hospital
+
 
     def get_entity_by_id(self, entity_id:int):
         for entity in self._entites:
@@ -1016,7 +1057,7 @@ class EntityManager(object):
 
         assigned_ambulance_indices = set()
 
-        # assigned ambulances → emergencies
+        # assigned ambulances -> emergencies
         for amb_idx, em_idx in hungarian_matches:
             ambulance = available_ambulances[amb_idx]
             emergency = emergencies[em_idx]
@@ -1024,7 +1065,7 @@ class EntityManager(object):
             assignments.append((ambulance, emergency))
             assigned_ambulance_indices.add(amb_idx)
 
-        # unassigned ambulances → (ambulance, ambulance)
+        # unassigned ambulances -> (ambulance, ambulance)
         for idx, ambulance in enumerate(available_ambulances):
             if idx not in assigned_ambulance_indices:
                 assignments.append((ambulance, ambulance))
