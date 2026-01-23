@@ -1,9 +1,6 @@
 import entities as en
 import securesocket as ss
 import time
-import sqlite3
-
-
 
 
 server = ss.Server(42074, "utf-8", "!DISCONN", "!HANDSHAKE")
@@ -64,7 +61,7 @@ def handle_admin_input(admin_input:str):
                     else:
                         my_database_manager.execute("INSERT OR IGNORE INTO AchievedQualification(CrewID, QualificationID) VALUES(?, ?)", (data[1],data[2]))
     except Exception as e:
-        print(f"Error {e}")
+        print(f"Error\n{e}")
 
 
 

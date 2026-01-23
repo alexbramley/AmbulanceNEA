@@ -386,7 +386,7 @@ class ServerManager(object):
         combination = SuperManager.get_entity_manager().calculate_best_combination()
         if combination == self._previous_combination:
             return
-        print("we got a new combination, which is")
+        print("we got a new combination, which is:")
         print(combination)
         for matchup in combination:
             ambulance = matchup[0]
@@ -463,7 +463,7 @@ class ServerManager(object):
                     new_cd, new_ad = connection_manager.handle_conn_msg(message_to_send)
                     enm.handle_command(new_cd, new_ad)
 
-                    # TODO make this load data (like qualifications) from the database
+                    
 
                     dbm.execute("SELECT Qualification.QualificationID FROM Qualification, AchievedQualification WHERE Qualification.QualificationID = AchievedQualification.QualificationID AND AchievedQualification.CrewID = ?",
                                 (argument_data[0],),
@@ -697,6 +697,13 @@ class Ambulance(Entity):
 
     def set_status(self, new_status):
         print(f"setting status {new_status.get_name()}")
+        if new_status == vehicle_states["on_scene"]:
+            if type(self._destination) == Emergency:
+                self._destination.ambulance_required = False
+        elif new_status == vehicle_states["returning_to_hospital"] or new_status == vehicle_states["returning_to_base"]:
+            if type(self._destination) == Emergency:
+                SuperManager.get_entity_manager().remove_entity(self._destination)
+                self._destination = self # TODO set destination to be hospital or base or somethign
         self._status = new_status
 
     def get_speed(self):
@@ -724,7 +731,7 @@ class Emergency(Entity):
         self._response_time = None # the time when the emergency received a response
         self._start_time = None
         self._end_time = None
-        self._ambulance_required = True
+        self.ambulance_required = True
         self.injury = injury
         self.description = description
 
@@ -761,6 +768,12 @@ class Emergency(Entity):
     def get_severity(self):
         return self._severity
 
+class Hostpital(Entity):
+    def __init__(self, entity_id, position:vectors.Vector2):
+        super().__init__(entity_id, position)
+
+
+        
 
 
 class EntityManager(object):
@@ -779,7 +792,7 @@ class EntityManager(object):
 
                 # when we get the create ambulance command, we should check if an ambulance with that id exists in the db.
                 # if so, we then create the ambulance
-                # if no ambulance exists with that id, we should make a new ambulance with that id # TODO THIS MUST BE AUTHED BY AN ADMIN SOMEHOW
+                # if no ambulance exists with that id, we should raise an error
 
                 if SuperManager.get_is_server():
                     try:
@@ -793,11 +806,12 @@ class EntityManager(object):
                         if ambulance_exists:
                             print("That ambulance exists in the database")
                         else:
-                            dbm.execute(
-                                "INSERT OR IGNORE INTO Ambulance(AmbulanceCallSign) VALUES (?)",
-                                (kwargs["callsign"],)
-                            )
-                            print("we made a new ambulance")
+                            raise Exception("No ambulance exists in the database with that callsign")
+                            # dbm.execute(
+                            #     "INSERT OR IGNORE INTO Ambulance(AmbulanceCallSign) VALUES (?)",
+                            #     (kwargs["callsign"],)
+                            # )
+                            # print("we made a new ambulance")
 
                     except Exception as e:
                         print(e)
@@ -809,6 +823,8 @@ class EntityManager(object):
             elif kwargs["entity_type"] == "emergency":
                 new_entity = Emergency(kwargs["entity_id"], kwargs["position"], kwargs["severity"], kwargs["injury"], kwargs["description"])
                 new_entity.set_start_time(datetime.datetime.now())
+            elif kwargs["entity_type"] == "hospital":
+                new_entity = Hostpital(kwargs["entity_id"], kwargs["position"])
             else:
                 raise Exception("Entity type invalid!")
 
@@ -869,7 +885,12 @@ class EntityManager(object):
         import math
 
         available_ambulances = self.get_ambulances_by_state(vehicle_states["available"]) + self.get_ambulances_by_state(vehicle_states["en_route"])
-        emergencies = self.get_emergencies()
+        all_emergencies = self.get_emergencies()
+        emergencies = []
+        for emergency in all_emergencies:
+            if emergency.ambulance_required:
+                emergencies.append(emergency)
+        
 
         if not available_ambulances:
             return []
@@ -1036,12 +1057,13 @@ class EntityManager(object):
                             password = password_data[0]
                             print(password)
                     else:
-                        dbm.execute(
-                            "INSERT OR IGNORE INTO AmbulanceCrew(CrewID, AmbulanceCallSign, CrewHashedPassword) VALUES (?, ?, ?)",
-                            ("CRW" + str(crew_id).rjust(3, "0"),"AMB001","exapmlepassword",)
-                        )
+                        raise Exception("There is no such crew in the database")
+                        # dbm.execute(
+                        #     "INSERT OR IGNORE INTO AmbulanceCrew(CrewID, AmbulanceCallSign, CrewHashedPassword) VALUES (?, ?, ?)",
+                        #     ("CRW" + str(crew_id).rjust(3, "0"),"AMB001","exapmlepassword",)
+                        # )
                         
-                        print("we made a record")
+                        # print("we made a record")
                 except Exception as e:
                     print("there was an error in the crew db operation")
                     print(type(e),e)
@@ -1049,12 +1071,13 @@ class EntityManager(object):
             self._crews.append(AmbulanceCrew(crew_id))
             return
         
-        raise Exception("A crew exists already with that id")
+        raise Exception("A crew exists already with that id") # this line is only triggered if the first try block has no errors, meaning that a crew already exists
+    
         # when we get the create crew command, we should check if a crew with that id exists in the db.
         # if so, we should check if the password given matches that crew's password
             # if yes, then create the crew
             # if no, then we should refuse to create the crew
-        # if no crew exists with that id, we should make a new crew with that id and password # TODO THIS MUST BE AUTHED BY AN ADMIN SOMEHOW
+        # if no crew exists with that id, we should raise an error
         
 
     def get_crew_by_id(self, crew_id:int):
@@ -1091,6 +1114,8 @@ class EntityManager(object):
                     self.add_new_entity(entity_id=int(argument_data[0]), entity_type=command_data[1], position=vectors.Vector2(float(argument_data[1]), float(argument_data[2])), status=argument_data[3], callsign=argument_data[4]) # command_data: [1]=entitytype argument_data: [0]=id, [1]=xpos, [2]=ypos
                 elif command_data[1] == "emergency":
                     self.add_new_entity(entity_id=int(argument_data[0]), entity_type=command_data[1], position=vectors.Vector2(float(argument_data[1]), float(argument_data[2])), severity=int(argument_data[3]), injury=argument_data[4], description=argument_data[5]) # argument_data[3]=severity, [4]=injury, [5]=description
+                elif command_data[1] == "hospital":
+                    self.add_new_entity(entity_id=argument_data[0], entity_type=command_data[1], position=vectors.Vector2(float(argument_data[1]), float(argument_data[2])))
                 else:
                     self.add_new_entity(entity_id=int(argument_data[0]), entity_type=command_data[1], position=vectors.Vector2(float(argument_data[1]), float(argument_data[2])))
                 print("we added a new entity")
@@ -1103,7 +1128,7 @@ class EntityManager(object):
             elif command_data[0] == "SET_DESTINATION":
                 self.get_entity_by_id(int(argument_data[0])).set_destination(self.get_entity_by_id(int(argument_data[1])))
             elif command_data[0] == "SET_STATUS":
-                self.get_entity_by_id(int(argument_data[0])).set_status(vehicle_states[argument_data[1]]) # argument_data: [0]=id, [1]=status_name
+                self.get_entity_by_id(int(argument_data[0])).set_status(vehicle_states[argument_data[1]]) # argument_data: [0]=ambulance_id, [1]=status_name
             elif command_data[0] == "CREATE_CREW":
                 self.create_crew(int(argument_data[0])) # argument_data: [0] = crew_id
             elif command_data[0] == "REMOVE_CREW":
@@ -1137,7 +1162,8 @@ vehicle_states = {"available":VehicleState("Available"),
                   "returning_to_base":VehicleState("Returning to base"),
                   "handover":VehicleState("Shift handover")}
 
-vehicle_states["available"].set_next_states([vehicle_states["en_route"], vehicle_states["handover"]])
+# vehicle_states["available"].set_next_states([vehicle_states["en_route"], vehicle_states["handover"]])
+vehicle_states["available"].set_next_states([vehicle_states["handover"]])
 vehicle_states["en_route"].set_next_states([vehicle_states["on_scene"]])
 vehicle_states["on_scene"].set_next_states([vehicle_states["returning_to_base"], vehicle_states["returning_to_hospital"]])
 vehicle_states["returning_to_hospital"].set_next_states([vehicle_states["unloading"]])

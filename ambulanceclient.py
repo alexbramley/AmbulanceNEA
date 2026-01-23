@@ -569,6 +569,10 @@ class CallHandlerFrame(tk.Frame):
             self.bool_vars[opt] = v
             self.checks[opt] = cb
 
+    def reset_qual_checkboxes(self):
+        for opt in list(self.bool_vars.keys()):
+            self.bool_vars[opt] = False
+
 
     def submit_emergency(self):
         injury = self.injury_entry.get()
@@ -603,7 +607,7 @@ class CallHandlerFrame(tk.Frame):
         for name in selected_qual_names:
             for qual in en.qualifications:
                 if qual.get_name() == name:
-                    my_conn_manager.send_socket_message(f"<ADD_QUALIFICATION|emergency|addnewemergency{previous_idempotency_key+counter}>{int(str(my_callhandler_id).rjust(3,"0")+str(previous_idempotency_key).rjust(3,"0"))}|{qual.get_id()}",False)
+                    my_conn_manager.send_socket_message(f"<ADD_QUALIFICATION|emergency|addnewemergency{previous_idempotency_key+counter}>{int("001"+str(my_callhandler_id).rjust(3,"0")+str(previous_idempotency_key).rjust(3,"0"))}|{qual.get_id()}",False)
                     break
             counter += 1
 
@@ -616,6 +620,7 @@ class CallHandlerFrame(tk.Frame):
         self.lat_entry.delete(0, tk.END)
         self.lon_entry.delete(0, tk.END)
         self.desc_box.delete("1.0", tk.END)
+        self.reset_qual_checkboxes()
 
 
 
