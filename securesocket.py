@@ -84,7 +84,9 @@ class Server(SecureSocket):
 	"""Server object, creates connections with clients"""
 	def _setup_master_conn(self):
 		super()._setup_master_conn()
+		self._master_conn.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 		self._master_conn.bind(self._ADDR)
+
 	
 
 	def set_socket_status(self, online: bool):
