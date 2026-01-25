@@ -73,6 +73,19 @@ def update_quals():
             call_handler.rebuild_qual_checkboxes(en.qualifications)
             previous_quals = en.qualifications
 
+def get_colour_by_severity(severity:int) -> str:
+    if 0 <= severity and severity < 20:
+        return "green"
+    elif 20 <= severity and severity < 40:
+        return "yellow"
+    elif 40 <= severity and severity < 60:
+        return "orange"
+    elif 60 <= severity and severity < 80:
+        return "red"
+    elif 80 <= severity and severity < 100:
+        return "magenta"
+    return "white"
+
 def update_map_entities():
     while True:
         updated_markers = {}
@@ -86,6 +99,7 @@ def update_map_entities():
 
         except Exception as e:
             print(f"THERE WAS AN EXCEPTION\n{e}")
+            
         for entity in my_entity_manager.get_entites():
             if entity.get_id() not in markers and map_widget:
                 # making a new marker
@@ -94,9 +108,12 @@ def update_map_entities():
                     marker_text = entity.get_status().get_name() + " Ambulance"
                     new_path = map_widget.set_path([(entity.get_position().x, entity.get_position().y), (entity.get_destination().get_position().x, entity.get_destination().get_position().y)])
                     paths[entity.get_id()] = new_path
+                    new_marker = map_widget.set_marker(entity.get_position().x, entity.get_position().y, marker_text, marker_color_outside="blue", marker_color_circle="red")
                 elif type(entity) == en.Emergency:
                     marker_text = "Emergency, severity:" + str(entity.get_severity()) + " requires " + str(entity.get_qualifications())
-                new_marker = map_widget.set_marker(entity.get_position().x, entity.get_position().y, marker_text)
+                    new_marker = map_widget.set_marker(entity.get_position().x, entity.get_position().y, marker_text, marker_color_outside=get_colour_by_severity(entity.get_severity()), marker_color_circle=get_colour_by_severity(entity.get_severity()))
+                else:
+                    new_marker = map_widget.set_marker(entity.get_position().x, entity.get_position().y, marker_text)
                 markers[entity.get_id()] = (new_marker)
 
 
@@ -106,10 +123,10 @@ def update_map_entities():
                 if type(entity) == en.Ambulance:
                     paths[entity.get_id()].set_position_list([(entity.get_position().x, entity.get_position().y), (entity.get_destination().get_position().x, entity.get_destination().get_position().y)])
 
-                    markers[entity.get_id()].set_text(entity.get_status().get_name() + " Ambulance going to " + str(entity.get_destination()))
+                    markers[entity.get_id()].set_text(entity.get_status().get_name() + " " + str(entity))
                 
                 elif type(entity) == en.Emergency:
-                    marker_text = "Emergency, severity:" + str(entity.get_severity()) + " requires " + str(entity.get_qualifications())
+                    marker_text = "Emergency, " + entity.injury + ", severity: " + str(entity.get_severity()) + " requires " + str(entity.get_qualifications())
                     markers[entity.get_id()].set_text(marker_text)
 
             updated_markers[entity.get_id()] = (markers[entity.get_id()])
@@ -175,24 +192,24 @@ class App(tk.Tk):
 
 
 class LoginFrame(tk.Frame):
-    def __init__(self, master, controller):
-        super().__init__(master)
+    def __init__(self, master, controller, **kw):
+        super().__init__(master, kw)
         self.controller = controller
 
-        tk.Label(self, text="Login", font=("Arial", 22)).pack(pady=40)
+        tk.Label(self, text="Login", font=("Arial", 22), bg="gray21", fg="white").pack(pady=40)
 
         self.username = tk.Entry(self)
         self.callsign = tk.Entry(self)
         self.password = tk.Entry(self, show="*")
 
-        tk.Label(self, text="Crew ID or Call Handler ID", font=("Arial", 12, "bold")).pack(pady=5)
+        tk.Label(self, text="Crew ID or Call Handler ID", font=("Arial", 12, "bold"), bg="gray21", fg="white").pack(pady=5)
         self.username.pack(pady=5)
-        tk.Label(self, text="Ambulance Callsign (if applicable)", font=("Arial", 12, "bold")).pack(pady=5)
+        tk.Label(self, text="Ambulance Callsign (if applicable)", font=("Arial", 12, "bold"), bg="gray21", fg="white").pack(pady=5)
         self.callsign.pack(pady=5)
-        tk.Label(self, text="Password", font=("Arial", 12, "bold")).pack(pady=5)
+        tk.Label(self, text="Password", font=("Arial", 12, "bold"), bg="gray21", fg="white").pack(pady=5)
         self.password.pack(pady=5)
 
-        self.status = tk.Label(self, text="")
+        self.status = tk.Label(self, text="", bg="gray21")
         self.status.pack(pady=5)
 
         tk.Button(self, text="Login", command=self.login).pack(pady=20)
@@ -269,8 +286,8 @@ class LoginFrame(tk.Frame):
 
 
 class MainFrame(tk.Frame):
-    def __init__(self, master, controller):
-        super().__init__(master)
+    def __init__(self, master, controller, **kw):
+        super().__init__(master, **kw)
         self.controller = controller
 
         global entry, map_widget
@@ -286,7 +303,7 @@ class MainFrame(tk.Frame):
             if entry and entry.get():
                 my_conn_manager.send_socket_message(entry.get(), False)
 
-        top = tk.Frame(self)
+        top = tk.Frame(self, bg="gray21")
         top.pack(fill="x", padx=10, pady=10)
 
         entry = tk.Entry(top, width=40)
@@ -298,11 +315,11 @@ class MainFrame(tk.Frame):
         # MAIN CONTENT AREA
         # =========================
 
-        content = tk.Frame(self)
+        content = tk.Frame(self, bg="gray21")
         content.pack(fill="both", expand=True, padx=10, pady=10)
 
         # ---------- LEFT: MAP ----------
-        map_frame = tk.Frame(content)
+        map_frame = tk.Frame(content, bg="gray21")
         map_frame.pack(side="left", fill="both", expand=True)
 
         map_widget = TkinterMapView(map_frame, corner_radius=20)
@@ -312,7 +329,7 @@ class MainFrame(tk.Frame):
         map_widget.set_zoom(10)
 
         # ---------- RIGHT: CONTROL PANEL ----------
-        panel = tk.Frame(content, width=300)
+        panel = tk.Frame(content, width=300, bg="gray21")
         panel.pack(side="right", fill="y", padx=(10, 0))
         panel.pack_propagate(False)
 
@@ -320,7 +337,7 @@ class MainFrame(tk.Frame):
         # DESCRIPTION BOX
         # =========================
 
-        tk.Label(panel, text="Description", font=("Arial", 12, "bold")).pack(anchor="w")
+        tk.Label(panel, text="Description", font=("Arial", 12, "bold"), bg="gray21", fg="white").pack(anchor="w")
 
         self.description = tk.Text(panel, height=6, wrap="word", state="disabled")
         self.description.pack(fill="x", pady=(5, 15))
@@ -329,9 +346,9 @@ class MainFrame(tk.Frame):
         # UPDATE POSITION
         # =========================
 
-        tk.Label(panel, text="Update Position", font=("Arial", 12, "bold")).pack(anchor="w")
+        tk.Label(panel, text="Update Position", font=("Arial", 12, "bold"), bg="gray21", fg="white").pack(anchor="w")
 
-        pos_frame = tk.Frame(panel)
+        pos_frame = tk.Frame(panel, bg="gray21")
         pos_frame.pack(fill="x", pady=5)
 
         tk.Button(
@@ -356,7 +373,7 @@ class MainFrame(tk.Frame):
         # UPDATE STATUS
         # =========================
 
-        tk.Label(panel, text="Update Status", font=("Arial", 12, "bold")).pack(anchor="w", pady=(15, 0))
+        tk.Label(panel, text="Update Status", font=("Arial", 12, "bold"), bg="gray21", fg="white").pack(anchor="w", pady=(15, 0))
 
         self.current_status_var = tk.StringVar()
         self.current_status_var.set("Current status: —")
@@ -364,11 +381,11 @@ class MainFrame(tk.Frame):
         tk.Label(
             panel,
             textvariable=self.current_status_var,
-            font=("Arial", 12)
+            font=("Arial", 12), bg="gray21", fg="white"
         ).pack(anchor="w", pady=(10, 5))
 
 
-        status_frame = tk.Frame(panel)
+        status_frame = tk.Frame(panel, bg="gray21")
         status_frame.pack(fill="x", pady=5)
 
         self.status_var = tk.StringVar(value="Available")
@@ -478,22 +495,22 @@ class MainFrame(tk.Frame):
         previous_idempotency_key += 1
 
 class CallHandlerFrame(tk.Frame):
-    def __init__(self, master, controller):
-        super().__init__(master)
+    def __init__(self, master, controller, **kw):
+        super().__init__(master, kw)
         self.controller = controller
 
-        tk.Label(self, text="Call Handler", font=("Arial", 22)).pack(pady=20)
+        tk.Label(self, text="Call Handler", font=("Arial", 22), bg="gray21", fg="white").pack(pady=20)
 
-        form = tk.Frame(self)
+        form = tk.Frame(self, bg="gray21")
         form.pack(pady=10)
 
         # ---------- INJURY ----------
-        tk.Label(form, text="Injury Type").grid(row=0, column=0, sticky="w")
+        tk.Label(form, text="Injury Type", bg="gray21", fg="white").grid(row=0, column=0, sticky="w")
         self.injury_entry = tk.Entry(form, width=30)
         self.injury_entry.grid(row=0, column=1, pady=5)
 
         # ---------- SEVERITY ----------
-        tk.Label(form, text="Category").grid(row=1, column=0, sticky="w")
+        tk.Label(form, text="Category", bg="gray21", fg="white").grid(row=1, column=0, sticky="w")
         self.category_var = tk.IntVar(value=1)
         tk.Spinbox(
             form,
@@ -504,22 +521,22 @@ class CallHandlerFrame(tk.Frame):
         ).grid(row=1, column=1, sticky="w", pady=5)
 
         # ---------- COORDINATES ----------
-        tk.Label(form, text="Latitude").grid(row=2, column=0, sticky="w")
+        tk.Label(form, text="Latitude", bg="gray21", fg="white").grid(row=2, column=0, sticky="w")
         self.lat_entry = tk.Entry(form)
         self.lat_entry.grid(row=2, column=1, pady=5)
 
-        tk.Label(form, text="Longitude").grid(row=3, column=0, sticky="w")
+        tk.Label(form, text="Longitude", bg="gray21", fg="white").grid(row=3, column=0, sticky="w")
         self.lon_entry = tk.Entry(form)
         self.lon_entry.grid(row=3, column=1, pady=5)
 
         # ---------- DESCRIPTION ----------
-        tk.Label(self, text="Description").pack(anchor="w", padx=40, pady=(15, 0))
+        tk.Label(self, text="Description", bg="gray21", fg="white").pack(anchor="w", padx=40, pady=(15, 0))
         self.desc_box = tk.Text(self, height=5, wrap="word")
         self.desc_box.pack(fill="x", padx=40, pady=5)
 
         # QUALIFICATIONS CHECKBOXES
 
-        self.qual_frame = tk.Frame(self)
+        self.qual_frame = tk.Frame(self, bg="gray21")
         self.qual_frame.pack(anchor="w", padx=40, pady=10)
 
 
@@ -532,17 +549,17 @@ class CallHandlerFrame(tk.Frame):
         self.bool_vars = {}
         for opt in options:
             v = tk.BooleanVar()
-            tk.Checkbutton(self.qual_frame, text=opt, variable=v).pack(anchor="w")
+            tk.Checkbutton(self.qual_frame, text=opt, variable=v, bg="gray21", fg="white").pack(anchor="w")
             self.bool_vars[opt] = v
 
         # ---------- BUTTONS ----------
-        btns = tk.Frame(self)
+        btns = tk.Frame(self, bg="gray21")
         btns.pack(pady=20)
 
         tk.Button(
             btns,
             text="Submit Emergency",
-            command=self.submit_emergency
+            command=self.submit_emergency,
         ).pack(side="left", padx=10)
 
         
@@ -564,14 +581,23 @@ class CallHandlerFrame(tk.Frame):
 
         for opt in options:
             v = tk.BooleanVar()
-            cb = tk.Checkbutton(self.qual_frame, text=opt, variable=v)
+            cb = tk.Checkbutton(
+                self.qual_frame,
+                text=opt,
+                variable=v,
+                bg="gray21",
+                fg="white",
+                activebackground="gray30",
+                activeforeground="white",
+                selectcolor="gray30"
+            )
             cb.pack(anchor="w")
             self.bool_vars[opt] = v
             self.checks[opt] = cb
 
     def reset_qual_checkboxes(self):
         for opt in list(self.bool_vars.keys()):
-            self.bool_vars[opt] = False
+            self.bool_vars[opt].set(False)
 
 
     def submit_emergency(self):
@@ -598,7 +624,7 @@ class CallHandlerFrame(tk.Frame):
         global previous_idempotency_key
 
         message = (
-            f"<CREATE_ENTITY|emergency|newemergency{previous_idempotency_key}>{int(str(my_callhandler_id).rjust(3,"0")+str(previous_idempotency_key).rjust(3,"0"))}|{lat}|{lon}|{severity}|{injury}|{desc}"
+            f"<CREATE_ENTITY|emergency|newemergency{previous_idempotency_key}>{int("001"+str(my_callhandler_id).rjust(3,"0")+str(previous_idempotency_key).rjust(3,"0"))}|{lat}|{lon}|{severity}|{injury}|{desc}"
         )
         
         my_conn_manager.send_socket_message(message, False)
@@ -636,9 +662,9 @@ app = App()
 
 
 
-login = LoginFrame(app, app)
-main = MainFrame(app, app)
-call_handler = CallHandlerFrame(app, app)
+login = LoginFrame(app, app, bg="gray21")
+main = MainFrame(app, app, bg="gray21")
+call_handler = CallHandlerFrame(app, app, bg="gray21")
 
 app.frames["login"] = login
 app.frames["main"] = main

@@ -237,49 +237,52 @@ class ConnectionManager(object):
         while self._master_active:
             time.sleep(0.1)
             if self._secure_connection != None:
-                new_conn_msg = self._secure_connection.get_most_recent_message()
-                if self._newest_conn_msg != new_conn_msg:
-                    print("we got a brand new message")
-                    self._newest_conn_msg = new_conn_msg
-                    self._newest_conn_command_data, self._newest_conn_argument_data = self.handle_conn_msg(self._newest_conn_msg)
+                try:
+                    new_conn_msg = self._secure_connection.get_most_recent_message()
+                    if self._newest_conn_msg != new_conn_msg:
+                        print("we got a brand new message")
+                        self._newest_conn_msg = new_conn_msg
+                        self._newest_conn_command_data, self._newest_conn_argument_data = self.handle_conn_msg(self._newest_conn_msg)
 
-                    if self._newest_conn_command_data[0] == "NEW_QUALIFICATION":
-                        
-                        qualifications.append(Qualification(int(self._newest_conn_argument_data[0]), self._newest_conn_argument_data[1]))
-                        print(qualifications)
+                        if self._newest_conn_command_data[0] == "NEW_QUALIFICATION":
+                            
+                            qualifications.append(Qualification(int(self._newest_conn_argument_data[0]), self._newest_conn_argument_data[1]))
+                            print(qualifications)
 
-                    if self.logged_in:
-                        try:
-                            if self._newest_conn_command_data[0] == "LOGOUT":
-                                SuperManager.get_server_manager().handle_logout_message(self)
-                            else:
-                                SuperManager.get_entity_manager().handle_command(self._newest_conn_command_data, self._newest_conn_argument_data)
+                        if self.logged_in:
+                            try:
+                                if self._newest_conn_command_data[0] == "LOGOUT":
+                                    SuperManager.get_server_manager().handle_logout_message(self)
+                                else:
+                                    SuperManager.get_entity_manager().handle_command(self._newest_conn_command_data, self._newest_conn_argument_data)
 
-                                if SuperManager.get_is_server() == True:
-                                    SuperManager.get_server_manager().handle_connection_message(self, self._newest_conn_msg, self._newest_conn_command_data, self._newest_conn_argument_data)
-                        except Exception as e:
-                            print(e)
-                        
-                        
-                    else:
-                        if SuperManager.get_is_server():
-                            self.logged_in = SuperManager.get_server_manager().handle_login_message(self, self._newest_conn_command_data, self._newest_conn_argument_data)
-                            if self.logged_in:
-                                self.send_socket_message("<LOGIN_SUCCESS>", True)
-
-                                # UPDATE NEWLY LOGGED IN CLIENT ON QUALIFICATION LIST
-                                
-                                for qualification in qualifications:
-                                    self.send_socket_message(f"<NEW_QUALIFICATION>{qualification.get_id()}|{qualification.get_name()}", True)
-
-                                self._send_login_message_queue()
-                            else:
-                                self.send_socket_message("<LOGIN_FAILURE>", True)
+                                    if SuperManager.get_is_server() == True:
+                                        SuperManager.get_server_manager().handle_connection_message(self, self._newest_conn_msg, self._newest_conn_command_data, self._newest_conn_argument_data)
+                            except Exception as e:
+                                print(e)
+                            
+                            
                         else:
-                            self.logged_in = self._newest_conn_command_data[0] == "LOGIN_SUCCESS"
-                            print("login status",self.logged_in)
-                            if self.logged_in:
-                                self._send_login_message_queue()
+                            if SuperManager.get_is_server():
+                                self.logged_in = SuperManager.get_server_manager().handle_login_message(self, self._newest_conn_command_data, self._newest_conn_argument_data)
+                                if self.logged_in:
+                                    self.send_socket_message("<LOGIN_SUCCESS>", True)
+
+                                    # UPDATE NEWLY LOGGED IN CLIENT ON QUALIFICATION LIST
+                                    
+                                    for qualification in qualifications:
+                                        self.send_socket_message(f"<NEW_QUALIFICATION>{qualification.get_id()}|{qualification.get_name()}", True)
+
+                                    self._send_login_message_queue()
+                                else:
+                                    self.send_socket_message("<LOGIN_FAILURE>", True)
+                            else:
+                                self.logged_in = self._newest_conn_command_data[0] == "LOGIN_SUCCESS"
+                                print("login status",self.logged_in)
+                                if self.logged_in:
+                                    self._send_login_message_queue()
+                except Exception as e:
+                    print(e)
 
 
 
@@ -644,7 +647,7 @@ class AmbulanceCrew(object):
 
 class Qualification(object):
     def __repr__(self):
-        return "Qualifcation "+self._name
+        return self._name
     def __init__(self, qualification_id, qualification_name):
         self._id = qualification_id
         self._name = qualification_name
@@ -691,11 +694,12 @@ class Entity(object):
 class Ambulance(Entity):
     """Ambulance vehicle entity"""
     def __repr__(self):
-        try:
-            qualification_string = " with qualifications "+str(SuperManager.get_entity_manager().get_crew_by_ambulance(self).get_qualifications())
-        except:
-            qualification_string = " with no qualifications"
-        return "Ambulance "+super().__repr__()+" going to "+str(type(self._destination))+qualification_string
+        if self._crew != None:
+            crew_id = " with crew CRW"+str(self._crew.get_id()).rjust(3,"0")
+        else:
+            crew_id = " with no crew"
+        return "Ambulance "+self._callsign+crew_id
+
 
     def __init__(self, entity_id, position: vectors.Vector2, status, callsign):
         super().__init__(entity_id, position)
@@ -725,9 +729,9 @@ class Ambulance(Entity):
         elif new_status == vehicle_states["returning_to_hospital"] or new_status == vehicle_states["returning_to_base"]:
             if type(self._destination) == Emergency:
                 SuperManager.get_entity_manager().remove_entity(self._destination)
-            self._destination = self # TODO set destination to be hospital or base or somethign
-            # if new_status == vehicle_states["returning_to_hospital"]:
-            #     self._destination = SuperManager.get_entity_manager().get_closest_hospital(self.get_position()) # TODO fix this!!
+            # self._destination = self # TODO set destination to be hospital or base or somethign
+            if new_status == vehicle_states["returning_to_hospital"]:
+                self._destination = SuperManager.get_entity_manager().get_closest_hospital(self.get_position()) # TODO fix this!!
         self._status = new_status
 
     def get_speed(self):
@@ -805,6 +809,22 @@ class EntityManager(object):
     def __init__(self):
         self._entites = []
         self._crews = []
+        self._last_idempotency_key = 0
+        self._increase_severity_thread = None
+
+    def setup_severity_updater(self):
+        if SuperManager.get_is_server():
+            self._increase_severity_thread = threading.Thread(target=self.increase_emergency_severity, daemon=True).start()
+
+    def increase_emergency_severity(self):
+        while True:
+            time.sleep(60)
+            for emergency in self.get_emergencies():
+                if emergency.get_severity() >= 100:
+                    break
+                emergency.set_severity(emergency.get_severity() + 1)
+                SuperManager.get_server_manager().broadcast(f"<SET_SEVERITY|updatingseverity{self._last_idempotency_key}>{emergency.get_id()}|{emergency.get_severity()}")
+                self._last_idempotency_key += 1
 
     def add_new_entity(self, **kwargs):
         """Creates new entity of given type"""
@@ -868,7 +888,7 @@ class EntityManager(object):
         for hospital in self.get_entities_by_type(Hostpital):
             if closest_hospital == None:
                 closest_hospital = hospital
-            elif vectors.Vector2.Magnitude(vectors.Vector2.Add(hospital.get_position(), -position)) < vectors.Vector2.Magnitude(vectors.Vector2.Add(closest_hospital.get_position(), -position)):
+            elif vectors.Vector2.Magnitude(vectors.Vector2.Add(hospital.get_position(), vectors.Vector2(-position.x, -position.y))) < vectors.Vector2.Magnitude(vectors.Vector2.Add(closest_hospital.get_position(), vectors.Vector2(-position.x, -position.y))):
                 closest_hospital = hospital
         return closest_hospital
 
@@ -1176,6 +1196,8 @@ class EntityManager(object):
                 self.remove_crew(int(argument_data[0]))
             elif command_data[0] == "ASSIGN_CREW":
                 self.assign_crew(self.get_entity_by_id(int(argument_data[0])), self.get_crew_by_id(int(argument_data[1]))) # argument_data: [0]=ambulance_entity_id, [1]=crew_id
+            elif command_data[0] == "SET_SEVERITY":
+                self.get_entity_by_id(int(argument_data[0])).set_severity(int(argument_data[1]))
             elif command_data[0] == "ADD_QUALIFICATION": # can be done on emergencies or crews, specify in the command
                 
                 qualification = None

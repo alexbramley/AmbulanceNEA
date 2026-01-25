@@ -22,6 +22,7 @@ my_server_manager.set_server(server)
 my_server_manager.start_master()
 en.load_qualifications()
 en.load_hospitals()
+my_entity_manager.setup_severity_updater()
 
 def handle_admin_input(admin_input:str):
     split_input = admin_input.split(" ")
