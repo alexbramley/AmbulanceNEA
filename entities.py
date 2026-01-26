@@ -238,8 +238,8 @@ class ConnectionManager(object):
             time.sleep(0.1)
             if self._secure_connection != None:
                 try:
-                    new_conn_msg = self._secure_connection.get_most_recent_message()
-                    if self._newest_conn_msg != new_conn_msg:
+                    new_conn_msg, message_is_fresh = self._secure_connection.get_most_recent_message()
+                    if message_is_fresh:
                         print("we got a brand new message")
                         self._newest_conn_msg = new_conn_msg
                         self._newest_conn_command_data, self._newest_conn_argument_data = self.handle_conn_msg(self._newest_conn_msg)
@@ -729,9 +729,10 @@ class Ambulance(Entity):
         elif new_status == vehicle_states["returning_to_hospital"] or new_status == vehicle_states["returning_to_base"]:
             if type(self._destination) == Emergency:
                 SuperManager.get_entity_manager().remove_entity(self._destination)
-            # self._destination = self # TODO set destination to be hospital or base or somethign
             if new_status == vehicle_states["returning_to_hospital"]:
-                self._destination = SuperManager.get_entity_manager().get_closest_hospital(self.get_position()) # TODO fix this!!
+                self._destination = SuperManager.get_entity_manager().get_closest_hospital(self.get_position())
+            else:
+                self._destination = self
         self._status = new_status
 
     def get_speed(self):

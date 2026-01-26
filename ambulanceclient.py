@@ -610,7 +610,7 @@ class CallHandlerFrame(tk.Frame):
         selected_qual_names = [opt for opt, v in self.bool_vars.items() if v.get()]
         
 
-        if not injury or not lat or not lon:
+        if not injury or not lat or not lon or not desc:
             print("Missing fields")
             return
 

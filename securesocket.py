@@ -152,6 +152,7 @@ class SecureConnection(object):
 		self._connected = False
 		self._handshaked = False
 		self._most_recent_message = ""
+		self._most_recent_message_fresh = False
 
 		self._send_queue = []
 
@@ -208,6 +209,7 @@ class SecureConnection(object):
 						self.start_disconn(True)
 				else:
 					self._most_recent_message = msg
+					self._most_recent_message_fresh = True
 
 				# no longer need to broadcast message to everyone from here, this is done on a higher level now
 				# if type(self._sock) == Server:
@@ -228,7 +230,9 @@ class SecureConnection(object):
 
 
 	def get_most_recent_message(self):
-		return self._most_recent_message
+		was_message_fresh = self._most_recent_message_fresh
+		self._most_recent_message_fresh = False
+		return self._most_recent_message, was_message_fresh
 
 	def _receive(self, decode_format):
 		"""Receives a secure method from the connection, which has been send by the other side's _raw_send method"""
