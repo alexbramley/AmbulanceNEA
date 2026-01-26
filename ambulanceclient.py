@@ -96,6 +96,8 @@ def update_map_entities():
             my_destination = my_entity_manager.get_entity_by_id(my_ambulance_id).get_destination()
             if type(my_destination) == en.Emergency:
                 main.set_description(my_destination.description)
+            elif type(my_destination) == en.Ambulance:
+                main.set_description("")
 
         except Exception as e:
             print(f"THERE WAS AN EXCEPTION\n{e}")
