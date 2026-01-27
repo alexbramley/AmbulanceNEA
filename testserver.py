@@ -3,7 +3,7 @@ import securesocket as ss
 import time
 
 
-server = ss.Server(42075, "utf-8", "!DISCONN", "!HANDSHAKE")
+server = ss.Server(42076, "utf-8", "!DISCONN", "!HANDSHAKE")
 server.set_socket_status(True)
 print(server)
 
@@ -79,6 +79,7 @@ def db_insert_sample_data():
     my_database_manager.execute("INSERT OR IGNORE INTO AchievedQualification(CrewID, QualificationID) VALUES (?, ?)", ("CRW001", "QUL001"))
     my_database_manager.execute("INSERT OR IGNORE INTO Hospital(HospitalID, HospitalName, HospitalLat, HospitalLon) VALUES (?, ?, ?, ?)", ("HSP001", "Example Hospital London", 51.52, -0.09))
     my_database_manager.execute("INSERT OR IGNORE INTO Hospital(HospitalID, HospitalName, HospitalLat, HospitalLon) VALUES (?, ?, ?, ?)", ("HSP002", "Example Hospital Birmingham", 52.47, -1.89))
+    my_database_manager.execute("INSERT OR IGNORE INTO MapLogin(MapID, MapHashedPassword) VALUES (?, ?)", ("MAP001", en.bcrypt.hashpw("exapmlepassword".encode("utf-8"), en.bcrypt.gensalt())))
 
 
 

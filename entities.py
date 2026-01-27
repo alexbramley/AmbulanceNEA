@@ -2,7 +2,6 @@ import vectors
 import securesocket as ss
 import threading
 import time
-import socket
 import datetime
 from pysqlcipher3 import dbapi2 as sqlite3
 import queue
@@ -10,7 +9,7 @@ import os
 import bcrypt
 from dotenv import load_dotenv
 
-WRONG_QUALIFICATION_PENALTY = 2000
+WRONG_QUALIFICATION_PENALTY = 2000000000000000000000000000000
 DBPATH = "ambulancedata.db"
 
 load_dotenv()
@@ -27,7 +26,7 @@ def load_qualifications():
     qualifications = []
     if qual_data != None:
         for qual in qual_data:
-            qualifications.append(Qualification(qual[0][-3:], qual[1]))
+            qualifications.append(Qualification(int(qual[0][-3:]), qual[1]))
 
 hospitals = []
 def load_hospitals():
@@ -178,6 +177,14 @@ class DatabaseManager:
                         HospitalLat REAL,
                         HospitalLon REAL
                         )""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS MapLogin(
+                        MapID TEXT PRIMARY KEY,
+                        MapHashedPassword TEXT
+                        )""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS Emergency(
+                        EmergencyID TEXT PRIMARY KEY,
+                        EmergencyInjury TEXT
+                        )""")
             self._con.commit()
         else:
             raise Exception("databasemanager._con is set as None")
@@ -271,7 +278,7 @@ class ConnectionManager(object):
                                     # UPDATE NEWLY LOGGED IN CLIENT ON QUALIFICATION LIST
                                     
                                     for qualification in qualifications:
-                                        self.send_socket_message(f"<NEW_QUALIFICATION>{qualification.get_id()}|{qualification.get_name()}", True)
+                                        self.send_socket_message(f"<NEW_QUALIFICATION>{int(qualification.get_id())}|{qualification.get_name()}", True)
 
                                     self._send_login_message_queue()
                                 else:
@@ -528,6 +535,25 @@ class ServerManager(object):
                     return True
                 else:
                     return False
+            elif argument_data[0][:3] == "MAP":
+                print("Someone is logging into the map view")
+                # <LOGIN>MapID|MapHashedPassword|
+
+                dbm.execute("SELECT MapHashedPassword FROM MapLogin WHERE MapID = ? LIMIT 1",
+                            (argument_data[0],),
+                            "one")
+                
+                last_result = dbm.get_last_result()
+                maplogin_exists = last_result is not None
+
+                if maplogin_exists:
+                    if not bcrypt.checkpw(argument_data[1].encode("utf-8"), last_result[0]):
+                        print("incorrect password")
+                        return False
+                    return True
+                else:
+                    print("There is no account with that username")
+                    return False
             else:
                 return False
 
@@ -764,7 +790,10 @@ class Emergency(Entity):
         self.injury = injury
         self.description = description
 
-
+    def store_self(self):
+        dbm = SuperManager.get_database_manager()
+        dbm.execute("INSERT OR IGNORE INTO Emergency(EmergencyID, EmergencyInjury) VALUES (?, ?)",
+                    (f"EMG{self.get_id()}",self.injury))
 
     def set_response_time(self, new_response_time):
         self._response_time = new_response_time
@@ -911,11 +940,12 @@ class EntityManager(object):
 
     def remove_entity(self, entity_to_remove):
         """Removes specified entity"""
-        for entity in self._entites:
-            if entity == entity_to_remove:
-                self._entites.remove(entity)
-                return
-        raise Exception(f"No such entity found")
+        if entity_to_remove not in self._entites:
+            raise Exception(f"No such entity found")
+            
+        if type(entity_to_remove) == Emergency and SuperManager.get_is_server():
+            entity_to_remove.store_self()
+        self._entites.remove(entity_to_remove)
 
     def get_entites(self):
         return self._entites
@@ -987,7 +1017,8 @@ class EntityManager(object):
             for emergency in emergencies:
                 try:
                     ambulance_quals = set(ambulance.get_crew().get_qualifications())
-                except:
+                except Exception as e:
+                    print("Unable to get ambulance qualifications")
                     ambulance_quals = set()
                 required_quals = set(emergency.get_qualifications())
 
@@ -1170,6 +1201,7 @@ class EntityManager(object):
 
     def handle_command(self, command_data, argument_data):
         """Executed correct method based on incoming command"""
+        print(f"\nWE'RE HANDLING A COMMAND {command_data[0]}\n")
         try:
             if command_data[0] == "CREATE_ENTITY":
                 if command_data[1] == "ambulance":
@@ -1205,6 +1237,7 @@ class EntityManager(object):
                 for qual in qualifications:
                     if qual.get_id() == int(argument_data[1]):
                         qualification = qual
+                print(f"the qualification that we're adding is {qualification}")
                 if command_data[1] == "crew":
                     self.get_crew_by_id(int(argument_data[0])).add_qualification(qualification) # argument_data: [0]=crew_id, [1]=qualification_id
                 elif command_data[1] == "emergency":

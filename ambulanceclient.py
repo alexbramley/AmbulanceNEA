@@ -13,7 +13,8 @@ import geocoder
 
 markers = {}
 paths = {}
-map_widget = None
+ambulance_map_widget = None
+map_map_widget = None
 entry = None
 
 my_conn_manager = en.ConnectionManager()
@@ -26,14 +27,16 @@ my_crew_login = ""
 my_crew_id = 0
 my_callhandler_login = ""
 my_callhandler_id = 0
+my_maplogin = ""
+my_maplogin_id = 0
 
 my_destination = None
 
 
 try:
     with open("lastidempotencykey.key", "r") as f:
-        previous_idempotency_key = int(f.read(1))
-except:
+        previous_idempotency_key = int(f.read())
+except Exception as e:
     previous_idempotency_key = 0
 
 
@@ -43,7 +46,7 @@ except:
 
 def connect_to_server():
     client = ss.Client(
-        42075,
+        42076,
         "utf-8",
         "!DISCONN",
         "!HANDSHAKE",
@@ -86,21 +89,22 @@ def get_colour_by_severity(severity:int) -> str:
         return "magenta"
     return "white"
 
-def update_map_entities():
+def update_map_entities(map_widget):
     while True:
         updated_markers = {}
         time.sleep(1)
-        try:
-            main.update_current_status()
-            global my_destination
-            my_destination = my_entity_manager.get_entity_by_id(my_ambulance_id).get_destination()
-            if type(my_destination) == en.Emergency:
-                main.set_description(my_destination.description)
-            elif type(my_destination) == en.Ambulance:
-                main.set_description("")
+        if my_ambulance_id != 0:
+            try:
+                main.update_current_status()
+                global my_destination
+                my_destination = my_entity_manager.get_entity_by_id(my_ambulance_id).get_destination()
+                if type(my_destination) == en.Emergency:
+                    main.set_description(my_destination.description)
+                elif type(my_destination) == en.Ambulance:
+                    main.set_description("")
 
-        except Exception as e:
-            print(f"THERE WAS AN EXCEPTION\n{e}")
+            except Exception as e:
+                print(f"THERE WAS AN EXCEPTION\n{e}")
             
         for entity in my_entity_manager.get_entites():
             if entity.get_id() not in markers and map_widget:
@@ -125,7 +129,8 @@ def update_map_entities():
                 if type(entity) == en.Ambulance:
                     paths[entity.get_id()].set_position_list([(entity.get_position().x, entity.get_position().y), (entity.get_destination().get_position().x, entity.get_destination().get_position().y)])
 
-                    markers[entity.get_id()].set_text(entity.get_status().get_name() + " " + str(entity))
+
+                    markers[entity.get_id()].set_text(entity.get_status().get_name() + " " + str(entity) + str(entity.get_crew().get_qualifications())) # type: ignore
                 
                 elif type(entity) == en.Emergency:
                     marker_text = "Emergency, " + entity.injury + ", severity: " + str(entity.get_severity()) + " requires " + str(entity.get_qualifications())
@@ -261,6 +266,14 @@ class LoginFrame(tk.Frame):
                 my_callhandler_id = int(user_login[-3:])
 
                 self.master.after(0, self.success_callhandler_page)
+            elif user_login[:3] == "MAP":
+                print("\n\n\nMAP LOGIN SUCCESS")
+                global my_maplogin
+                global my_maplogin_id
+                my_maplogin = user_login
+                my_maplogin_id = int(user_login[-3:])
+
+                self.master.after(0, self.success_map_page)
             else:
                 self.master.after(0, self.fail)
 
@@ -269,11 +282,13 @@ class LoginFrame(tk.Frame):
 
     def success_main_page(self):
         self.controller.show_frame("main")
-
-        threading.Thread(
-            target=update_map_entities,
-            daemon=True
-        ).start()
+        global ambulance_map_widget
+        if ambulance_map_widget != None:
+            threading.Thread(
+                target=update_map_entities,
+                daemon=True,
+                args=(ambulance_map_widget,)
+            ).start()
 
     def success_callhandler_page(self):
         self.controller.show_frame("call_handler")
@@ -282,6 +297,17 @@ class LoginFrame(tk.Frame):
             target=update_quals,
             daemon=True
         ).start()
+    
+    def success_map_page(self):
+        print("map loading thread!")
+        global map_map_widget
+        self.controller.show_frame("map_view")
+        if map_map_widget != None:
+            threading.Thread(
+                target=update_map_entities,
+                daemon=True,
+                args=(map_map_widget,)
+            ).start()
 
     def fail(self):
         self.status.config(text="Invalid login", fg="red")
@@ -292,7 +318,7 @@ class MainFrame(tk.Frame):
         super().__init__(master, **kw)
         self.controller = controller
 
-        global entry, map_widget
+        global entry, ambulance_map_widget
 
         self._previous_status = None
         self._next_statuses = []
@@ -324,11 +350,11 @@ class MainFrame(tk.Frame):
         map_frame = tk.Frame(content, bg="gray21")
         map_frame.pack(side="left", fill="both", expand=True)
 
-        map_widget = TkinterMapView(map_frame, corner_radius=20)
-        map_widget.pack(fill="both", expand=True)
+        ambulance_map_widget = TkinterMapView(map_frame, corner_radius=20)
+        ambulance_map_widget.pack(fill="both", expand=True)
 
-        map_widget.set_position(51.5074, -0.1278)
-        map_widget.set_zoom(10)
+        ambulance_map_widget.set_position(51.5074, -0.1278)
+        ambulance_map_widget.set_zoom(10)
 
         # ---------- RIGHT: CONTROL PANEL ----------
         panel = tk.Frame(content, width=300, bg="gray21")
@@ -650,7 +676,45 @@ class CallHandlerFrame(tk.Frame):
         self.desc_box.delete("1.0", tk.END)
         self.reset_qual_checkboxes()
 
+class MapViewFrame(tk.Frame):
+    def __init__(self, master, controller, **kw):
+        super().__init__(master, **kw)
+        self.controller = controller
 
+        global entry, map_map_widget
+
+        # =========================
+        # TOP COMMAND BAR
+        # =========================
+
+        # def submit():
+        #     if entry and entry.get():
+        #         my_conn_manager.send_socket_message(entry.get(), False)
+
+        # top = tk.Frame(self, bg="gray21")
+        # top.pack(fill="x", padx=10, pady=10)
+
+        # entry = tk.Entry(top, width=40)
+        # entry.pack(side="left", padx=(0, 10))
+
+        # tk.Button(top, text="Send", command=submit).pack(side="left")
+
+        # =========================
+        # MAIN CONTENT AREA
+        # =========================
+
+        content = tk.Frame(self, bg="gray21")
+        content.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # ---------- LEFT: MAP ----------
+        map_frame = tk.Frame(content, bg="gray21")
+        map_frame.pack(side="left", fill="both", expand=True)
+
+        map_map_widget = TkinterMapView(map_frame, corner_radius=20)
+        map_map_widget.pack(fill="both", expand=True)
+
+        map_map_widget.set_position(51.5074, -0.1278)
+        map_map_widget.set_zoom(10)
 
 # =========================
 # STARTUP
@@ -667,14 +731,17 @@ app = App()
 login = LoginFrame(app, app, bg="gray21")
 main = MainFrame(app, app, bg="gray21")
 call_handler = CallHandlerFrame(app, app, bg="gray21")
+map_view = MapViewFrame(app, app, bg="gray21")
 
 app.frames["login"] = login
 app.frames["main"] = main
 app.frames["call_handler"] = call_handler
+app.frames["map_view"] = map_view
 
 login.place(relwidth=1, relheight=1)
 main.place(relwidth=1, relheight=1)
 call_handler.place(relwidth=1, relheight=1)
+map_view.place(relwidth=1, relheight=1)
 
 app.show_frame("login")
 app.mainloop()
