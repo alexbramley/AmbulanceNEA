@@ -9,7 +9,7 @@ import os
 import bcrypt
 from dotenv import load_dotenv
 
-WRONG_QUALIFICATION_PENALTY = 2000000000000000000000000000000
+WRONG_QUALIFICATION_PENALTY = 2000
 DBPATH = "ambulancedata.db"
 
 load_dotenv()
