@@ -734,6 +734,15 @@ class Entity(object):
         return self.position
 
 class Ambulance(Entity):
+    def __init__(self, entity_id, position: vectors.Vector2, status, callsign):
+        super().__init__(entity_id, position)
+        self._status = status
+        self._destination = self
+        self._speed = 25
+        self._crew = None
+        self._callsign = callsign
+
+        
     """Ambulance vehicle entity"""
     def __repr__(self):
         if self._crew != None:
@@ -743,13 +752,6 @@ class Ambulance(Entity):
         return "Ambulance "+self._callsign+crew_id
 
 
-    def __init__(self, entity_id, position: vectors.Vector2, status, callsign):
-        super().__init__(entity_id, position)
-        self._status = status
-        self._destination = self
-        self._speed = 25
-        self._crew = None
-        self._callsign = callsign
 
     def get_distance_to_destination(self):
         return haversine_distance(self.position, self._destination.get_position())
