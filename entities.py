@@ -8,6 +8,7 @@ import queue
 import os
 import bcrypt
 from dotenv import load_dotenv
+import math
 
 WRONG_QUALIFICATION_PENALTY = 2000
 DBPATH = "ambulancedata.db"
@@ -44,7 +45,22 @@ def load_hospitals():
             SuperManager.get_server_manager().broadcast(f"<CREATE_ENTITY|hospital|loadhospital{hospital[0]}>{int("002"+"000"+hospital[0][-3:])}|{float(hospital[2])}|{float(hospital[3])}")
             SuperManager.get_entity_manager().add_new_entity(entity_type="hospital", entity_id=int("002"+"000"+hospital[0][-3:]), position=vectors.Vector2(float(hospital[2]), float(hospital[3])))
             
+# haversine distance
+def haversine_distance(pos1, pos2):
+    r = 6371000
+    lat1 = math.radians(pos1.x)
+    lon1 = math.radians(pos1.y)
+    lat2 = math.radians(pos2.x)
+    lon2 = math.radians(pos2.y)
 
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    )
+    return 2 * r * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     
 def init_db():
     con = sqlite3.connect(DBPATH, timeout=10) # type: ignore
@@ -731,9 +747,15 @@ class Ambulance(Entity):
         super().__init__(entity_id, position)
         self._status = status
         self._destination = self
-        self._speed = 35
+        self._speed = 25
         self._crew = None
         self._callsign = callsign
+
+    def get_distance_to_destination(self):
+        return haversine_distance(self.position, self._destination.get_position())
+    
+    def get_eta(self):
+        return self.get_distance_to_destination()/self._speed
 
     def set_callsign(self, new_call_sign):
         self._callsign = new_call_sign
@@ -974,7 +996,6 @@ class EntityManager(object):
         return emergencies
 
     def calculate_best_combination(self):
-        import math
 
         available_ambulances = self.get_ambulances_by_state(vehicle_states["available"]) + self.get_ambulances_by_state(vehicle_states["en_route"])
         all_emergencies = self.get_emergencies()
@@ -993,22 +1014,7 @@ class EntityManager(object):
                 assignments.append((ambulance, ambulance))
             return assignments
 
-        # haversine distance
-        def haversine_distance(pos1, pos2):
-            r = 6371000
-            lat1 = math.radians(pos1.x)
-            lon1 = math.radians(pos1.y)
-            lat2 = math.radians(pos2.x)
-            lon2 = math.radians(pos2.y)
-
-            dlat = lat2 - lat1
-            dlon = lon2 - lon1
-
-            a = (
-                math.sin(dlat / 2) ** 2
-                + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
-            )
-            return 2 * r * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        
 
         # build cost matrix (ambulances x emergencies)
         cost_matrix = []

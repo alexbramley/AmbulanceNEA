@@ -7,9 +7,9 @@ from tkintermapview import TkinterMapView
 import threading
 import geocoder
 
-# =========================
+
 # GLOBALS
-# =========================
+
 
 markers = {}
 paths = {}
@@ -40,9 +40,9 @@ except Exception as e:
     previous_idempotency_key = 0
 
 
-# =========================
+
 # NETWORK SETUP (RUN FIRST)
-# =========================
+
 
 def connect_to_server():
     client = ss.Client(
@@ -96,6 +96,7 @@ def update_map_entities(map_widget):
         if my_ambulance_id != 0:
             try:
                 main.update_current_status()
+                main.set_eta(my_entity_manager.get_entity_by_id(my_ambulance_id).get_eta())
                 global my_destination
                 my_destination = my_entity_manager.get_entity_by_id(my_ambulance_id).get_destination()
                 if type(my_destination) == en.Emergency:
@@ -323,9 +324,9 @@ class MainFrame(tk.Frame):
         self._previous_status = None
         self._next_statuses = []
 
-        # =========================
+        
         # TOP COMMAND BAR
-        # =========================
+        
 
         def submit():
             if entry and entry.get():
@@ -339,14 +340,14 @@ class MainFrame(tk.Frame):
 
         tk.Button(top, text="Send", command=submit).pack(side="left")
 
-        # =========================
+        
         # MAIN CONTENT AREA
-        # =========================
+        
 
         content = tk.Frame(self, bg="gray21")
         content.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # ---------- LEFT: MAP ----------
+        #  LEFT: MAP 
         map_frame = tk.Frame(content, bg="gray21")
         map_frame.pack(side="left", fill="both", expand=True)
 
@@ -356,23 +357,34 @@ class MainFrame(tk.Frame):
         ambulance_map_widget.set_position(51.5074, -0.1278)
         ambulance_map_widget.set_zoom(10)
 
-        # ---------- RIGHT: CONTROL PANEL ----------
+        #  RIGHT: CONTROL PANEL 
         panel = tk.Frame(content, width=300, bg="gray21")
         panel.pack(side="right", fill="y", padx=(10, 0))
         panel.pack_propagate(False)
 
-        # =========================
+        eta_panel = tk.Frame(panel, width=50, bg="gray10")
+        eta_panel.pack(side="top", padx=10)
+
+        self.eta_text = tk.StringVar()
+        self.eta_text.set("00min")
+
+        tk.Label(
+            panel,
+            textvariable=self.eta_text,
+            font=("Arial", 12), bg="gray10", fg="white"
+        ).pack(anchor="center", pady=(10, 10))
+        
         # DESCRIPTION BOX
-        # =========================
+        
 
         tk.Label(panel, text="Description", font=("Arial", 12, "bold"), bg="gray21", fg="white").pack(anchor="w")
 
         self.description = tk.Text(panel, height=6, wrap="word", state="disabled")
         self.description.pack(fill="x", pady=(5, 15))
 
-        # =========================
+        
         # UPDATE POSITION
-        # =========================
+        
 
         tk.Label(panel, text="Update Position", font=("Arial", 12, "bold"), bg="gray21", fg="white").pack(anchor="w")
 
@@ -397,14 +409,14 @@ class MainFrame(tk.Frame):
             command=self.update_position
         ).pack(side="left")
 
-        # =========================
+        
         # UPDATE STATUS
-        # =========================
+        
 
         tk.Label(panel, text="Update Status", font=("Arial", 12, "bold"), bg="gray21", fg="white").pack(anchor="w", pady=(15, 0))
 
         self.current_status_var = tk.StringVar()
-        self.current_status_var.set("Current status: —")
+        self.current_status_var.set("Current status:")
 
         tk.Label(
             panel,
@@ -431,6 +443,8 @@ class MainFrame(tk.Frame):
             command=self.update_status
         ).pack(side="left", padx=(5, 0))
 
+    def set_eta(self, new_time_seconds:float):
+        self.eta_text.set(str(int(new_time_seconds//60)).rjust(2, "0")+"min")
     
     def set_description(self, new_text):
         self.description.config(state="normal")
@@ -532,12 +546,12 @@ class CallHandlerFrame(tk.Frame):
         form = tk.Frame(self, bg="gray21")
         form.pack(pady=10)
 
-        # ---------- INJURY ----------
+        #  INJURY 
         tk.Label(form, text="Injury Type", bg="gray21", fg="white").grid(row=0, column=0, sticky="w")
         self.injury_entry = tk.Entry(form, width=30)
         self.injury_entry.grid(row=0, column=1, pady=5)
 
-        # ---------- SEVERITY ----------
+        #  SEVERITY 
         tk.Label(form, text="Category", bg="gray21", fg="white").grid(row=1, column=0, sticky="w")
         self.category_var = tk.IntVar(value=1)
         tk.Spinbox(
@@ -548,7 +562,7 @@ class CallHandlerFrame(tk.Frame):
             width=5
         ).grid(row=1, column=1, sticky="w", pady=5)
 
-        # ---------- COORDINATES ----------
+        #  COORDINATES 
         tk.Label(form, text="Latitude", bg="gray21", fg="white").grid(row=2, column=0, sticky="w")
         self.lat_entry = tk.Entry(form)
         self.lat_entry.grid(row=2, column=1, pady=5)
@@ -557,7 +571,7 @@ class CallHandlerFrame(tk.Frame):
         self.lon_entry = tk.Entry(form)
         self.lon_entry.grid(row=3, column=1, pady=5)
 
-        # ---------- DESCRIPTION ----------
+        #  DESCRIPTION 
         tk.Label(self, text="Description", bg="gray21", fg="white").pack(anchor="w", padx=40, pady=(15, 0))
         self.desc_box = tk.Text(self, height=5, wrap="word")
         self.desc_box.pack(fill="x", padx=40, pady=5)
@@ -580,7 +594,7 @@ class CallHandlerFrame(tk.Frame):
             tk.Checkbutton(self.qual_frame, text=opt, variable=v, bg="gray21", fg="white").pack(anchor="w")
             self.bool_vars[opt] = v
 
-        # ---------- BUTTONS ----------
+        #  BUTTONS 
         btns = tk.Frame(self, bg="gray21")
         btns.pack(pady=20)
 
@@ -683,9 +697,9 @@ class MapViewFrame(tk.Frame):
 
         global entry, map_map_widget
 
-        # =========================
+        
         # TOP COMMAND BAR
-        # =========================
+        
 
         # def submit():
         #     if entry and entry.get():
@@ -699,14 +713,14 @@ class MapViewFrame(tk.Frame):
 
         # tk.Button(top, text="Send", command=submit).pack(side="left")
 
-        # =========================
+        
         # MAIN CONTENT AREA
-        # =========================
+        
 
         content = tk.Frame(self, bg="gray21")
         content.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # ---------- LEFT: MAP ----------
+        #  LEFT: MAP 
         map_frame = tk.Frame(content, bg="gray21")
         map_frame.pack(side="left", fill="both", expand=True)
 
@@ -716,9 +730,9 @@ class MapViewFrame(tk.Frame):
         map_map_widget.set_position(51.5074, -0.1278)
         map_map_widget.set_zoom(10)
 
-# =========================
+
 # STARTUP
-# =========================
+
 
 connect_to_server()
 
