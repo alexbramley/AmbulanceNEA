@@ -3,7 +3,7 @@ import securesocket as ss
 import threading
 import time
 import datetime
-from pysqlcipher3 import dbapi2 as sqlite3
+from sqlcipher3 import dbapi2 as sqlite3
 import queue
 import os
 import bcrypt
@@ -42,8 +42,8 @@ def load_hospitals():
     if hospital_data != None:
         for hospital in hospital_data:
             print(f"doing hospital {hospital}")
-            SuperManager.get_server_manager().broadcast(f"<CREATE_ENTITY|hospital|loadhospital{hospital[0]}>{int("002"+"000"+hospital[0][-3:])}|{float(hospital[2])}|{float(hospital[3])}")
-            SuperManager.get_entity_manager().add_new_entity(entity_type="hospital", entity_id=int("002"+"000"+hospital[0][-3:]), position=vectors.Vector2(float(hospital[2]), float(hospital[3])))
+            SuperManager.get_server_manager().broadcast(f"<CREATE_ENTITY|hospital|loadhospital{hospital[0]}>{int('002'+'000'+hospital[0][-3:])}|{float(hospital[2])}|{float(hospital[3])}")
+            SuperManager.get_entity_manager().add_new_entity(entity_type="hospital", entity_id=int('002'+'000'+hospital[0][-3:]), position=vectors.Vector2(float(hospital[2]), float(hospital[3])))
             
 # haversine distance
 def haversine_distance(pos1, pos2):
