@@ -43,6 +43,9 @@ except Exception as e:
 
 # NETWORK SETUP (RUN FIRST)
 
+server_ipaddress = input()
+if server_ipaddress == "":
+    server_ipaddress = socket.gethostbyname(socket.gethostname())
 
 def connect_to_server():
     client = ss.Client(
@@ -50,7 +53,7 @@ def connect_to_server():
         "utf-8",
         "!DISCONN",
         "!HANDSHAKE",
-        socket.gethostbyname(socket.gethostname())
+        server_ipaddress
     )
     client.set_socket_status(True)
 
@@ -666,7 +669,7 @@ class CallHandlerFrame(tk.Frame):
         global previous_idempotency_key
 
         message = (
-            f"<CREATE_ENTITY|emergency|newemergency{previous_idempotency_key}>{int("001"+str(my_callhandler_id).rjust(3,"0")+str(previous_idempotency_key).rjust(3,"0"))}|{lat}|{lon}|{severity}|{injury}|{desc}"
+            f"<CREATE_ENTITY|emergency|newemergency{previous_idempotency_key}>{int('001'+str(my_callhandler_id).rjust(3,'0')+str(previous_idempotency_key).rjust(3,'0'))}|{lat}|{lon}|{severity}|{injury}|{desc}"
         )
         
         my_conn_manager.send_socket_message(message, False)
@@ -675,7 +678,7 @@ class CallHandlerFrame(tk.Frame):
         for name in selected_qual_names:
             for qual in en.qualifications:
                 if qual.get_name() == name:
-                    my_conn_manager.send_socket_message(f"<ADD_QUALIFICATION|emergency|addnewemergency{previous_idempotency_key+counter}>{int("001"+str(my_callhandler_id).rjust(3,"0")+str(previous_idempotency_key).rjust(3,"0"))}|{qual.get_id()}",False)
+                    my_conn_manager.send_socket_message(f"<ADD_QUALIFICATION|emergency|addnewemergency{previous_idempotency_key+counter}>{int('001'+str(my_callhandler_id).rjust(3,'0')+str(previous_idempotency_key).rjust(3,'0'))}|{qual.get_id()}",False)
                     break
             counter += 1
 

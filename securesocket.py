@@ -85,8 +85,11 @@ class Server(SecureSocket):
 
 	def set_socket_status(self, online: bool):
 		if not online:
-			self._master_conn.shutdown(socket.SHUT_RDWR)
-			print("we shut down master conn")
+			try:
+				self._master_conn.shutdown(socket.SHUT_RDWR)
+				print("we shut down master conn")
+			except:
+				print("master conn was already shutdown")
 
 		super().set_socket_status(online)
 
