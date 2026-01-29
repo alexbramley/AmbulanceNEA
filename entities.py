@@ -431,7 +431,7 @@ class ServerManager(object):
             self._refresh_conns()
             self._recalculate_ambulance_combinations()
 
-    def _recalculate_ambulance_combinations(self): # right now there's a problem because unused ambulances' destinations need to be set back to themselves
+    def _recalculate_ambulance_combinations(self):
         combination = SuperManager.get_entity_manager().calculate_best_combination()
         if combination == self._previous_combination:
             return

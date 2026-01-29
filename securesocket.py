@@ -41,7 +41,6 @@ class SecureSocket(object):
 		self.conns = []
 		self._master_conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		
-
 	def set_socket_status(self, online:bool):
 		"""Handles when the socket is set to be offline or online, such as disonnecting and resetting"""
 		self._online = online
@@ -56,13 +55,10 @@ class SecureSocket(object):
 			self._conns = []
 			print("successfully closed the master connection")
 
-
 	def _master(self):
 		"""The main loop which handles creating new SecureConnection objects"""
 		print(f"[STARTING] master is starting...")
 		
-	
-	
 	def remove_conn(self, conn_to_remove):
 		"""Handles removing a SecureConnection"""
 		try:
@@ -87,8 +83,6 @@ class Server(SecureSocket):
 		self._master_conn.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 		self._master_conn.bind(self._ADDR)
 
-	
-
 	def set_socket_status(self, online: bool):
 		if not online:
 			self._master_conn.shutdown(socket.SHUT_RDWR)
@@ -112,7 +106,6 @@ class Server(SecureSocket):
 		if len(self._conns) == 0:
 			raise Exception("There are no active connections")
 		return self._conns
-
 
 
 class Client(SecureSocket):
@@ -216,8 +209,6 @@ class SecureConnection(object):
 				# 	for conn in self._sock.get_conns():
 				# 		conn.send(self._most_recent_message)
 
-
-
 	def _handle_sending(self):
 		"""Loop which handles transmission of data waiting in the queue"""
 		while self._handshaked and self._connected:
@@ -227,7 +218,6 @@ class SecureConnection(object):
 				self._send_items_from_queue()
 			except Exception as e:
 				print(e)
-
 
 	def get_most_recent_message(self):
 		was_message_fresh = self._most_recent_message_fresh
@@ -344,12 +334,7 @@ class SecureConnection(object):
 		# except Exception as e:
 		# 	print(e)
 			# raise Exception("Did not receive any acknowledgement for transmission")
-
-
-
-
-
-		
+	
 	def _byte_chunks(self, data_bytes, chunk_length):
 		"""Splits a string of byte data into a series of fixed length chunks"""
 		return (data_bytes[0+i:chunk_length+i] for i in range(0, len(data_bytes), chunk_length))
@@ -367,7 +352,6 @@ class SecureConnection(object):
 			return rsa.PublicKey.load_pkcs1(data_bytes)
 		else:
 			return data_bytes.decode(decode_format)
-
 
 	def _start_handshake(self):
 		"""Begins a handshake, which confirms communication across the connection and creates new rsa keys to use"""
@@ -431,7 +415,6 @@ class SecureConnection(object):
 		
 		return True
 
-
 	def start_disconn(self, removeconnfromsock:bool): # runs if we initiated the disconn
 		"""Begins a disconnection of the conn by informing the other side"""
 		print("we ended the connection")
@@ -453,3 +436,4 @@ class SecureConnection(object):
 		self._conn.close()
 		if removeconnfromsock:
 			self._sock.remove_conn(self)
+
