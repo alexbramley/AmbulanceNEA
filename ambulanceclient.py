@@ -13,7 +13,7 @@ import os
 # GLOBALS
 
 load_dotenv()
-SERVER_IPDADRESS = os.environ("SERVER_IP")
+SERVER_IPDADRESS = os.environ["SERVER_IP"]
 
 markers = {}
 paths = {}
