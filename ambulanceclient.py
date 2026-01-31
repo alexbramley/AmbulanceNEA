@@ -6,10 +6,14 @@ import tkinter as tk
 from tkintermapview import TkinterMapView
 import threading
 import geocoder
+from dotenv import load_dotenv
+import os
 
 
 # GLOBALS
 
+load_dotenv()
+SERVER_IPDADRESS = os.environ("SERVER_IP")
 
 markers = {}
 paths = {}
@@ -43,9 +47,6 @@ except Exception as e:
 
 # NETWORK SETUP (RUN FIRST)
 
-server_ipaddress = input()
-if server_ipaddress == "":
-    server_ipaddress = socket.gethostbyname(socket.gethostname())
 
 def connect_to_server():
     client = ss.Client(
@@ -53,7 +54,7 @@ def connect_to_server():
         "utf-8",
         "!DISCONN",
         "!HANDSHAKE",
-        server_ipaddress
+        SERVER_IPDADRESS
     )
     client.set_socket_status(True)
 
