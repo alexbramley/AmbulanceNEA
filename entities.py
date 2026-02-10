@@ -582,7 +582,7 @@ class ServerManager(object):
     def handle_logout_message(self, connection_manager:ConnectionManager):
         enm = SuperManager.get_entity_manager()
 
-        # TODO make this save relevant data to the database
+        
 
         message_to_send = f"<REMOVE_ENTITY|logout{self._previous_combination_idempotency_key}>{connection_manager.ambulance_id}"
         self.broadcast(message_to_send)
@@ -809,7 +809,7 @@ class Emergency(Entity):
         self._qualifications = []
         self._response_time = None # the time when the emergency received a response
         self._start_time = None
-        self._end_time = None
+        self._end_time = None # these times didn't end up getting implemented
         self.ambulance_required = True
         self.injury = injury
         self.description = description
@@ -905,11 +905,6 @@ class EntityManager(object):
                             print("That ambulance exists in the database")
                         else:
                             raise Exception("No ambulance exists in the database with that callsign")
-                            # dbm.execute(
-                            #     "INSERT OR IGNORE INTO Ambulance(AmbulanceCallSign) VALUES (?)",
-                            #     (kwargs["callsign"],)
-                            # )
-                            # print("we made a new ambulance")
 
                     except Exception as e:
                         print(e)
@@ -1018,7 +1013,7 @@ class EntityManager(object):
 
         
 
-        # build cost matrix (ambulances x emergencies)
+        # build cost matrix (ambulances * emergencies)
         cost_matrix = []
         for ambulance in available_ambulances:
             row = []
@@ -1117,7 +1112,7 @@ class EntityManager(object):
 
         assigned_ambulance_indices = set()
 
-        # assigned ambulances -> emergencies
+        # assigned ambulances emergencies
         for amb_idx, em_idx in hungarian_matches:
             ambulance = available_ambulances[amb_idx]
             emergency = emergencies[em_idx]
@@ -1125,7 +1120,7 @@ class EntityManager(object):
             assignments.append((ambulance, emergency))
             assigned_ambulance_indices.add(amb_idx)
 
-        # unassigned ambulances -> (ambulance, ambulance)
+        # unassigned ambulances (ambulance, ambulance)
         for idx, ambulance in enumerate(available_ambulances):
             if idx not in assigned_ambulance_indices:
                 assignments.append((ambulance, ambulance))
@@ -1159,12 +1154,6 @@ class EntityManager(object):
                             print(password)
                     else:
                         raise Exception("There is no such crew in the database")
-                        # dbm.execute(
-                        #     "INSERT OR IGNORE INTO AmbulanceCrew(CrewID, AmbulanceCallSign, CrewHashedPassword) VALUES (?, ?, ?)",
-                        #     ("CRW" + str(crew_id).rjust(3, "0"),"AMB001","exapmlepassword",)
-                        # )
-                        
-                        # print("we made a record")
                 except Exception as e:
                     print("there was an error in the crew db operation")
                     print(type(e),e)
@@ -1267,7 +1256,6 @@ vehicle_states = {"available":VehicleState("Available"),
                   "returning_to_base":VehicleState("Returning to base"),
                   "handover":VehicleState("Shift handover")}
 
-# vehicle_states["available"].set_next_states([vehicle_states["en_route"], vehicle_states["handover"]])
 vehicle_states["available"].set_next_states([vehicle_states["handover"]])
 vehicle_states["en_route"].set_next_states([vehicle_states["on_scene"]])
 vehicle_states["on_scene"].set_next_states([vehicle_states["returning_to_base"], vehicle_states["returning_to_hospital"]])

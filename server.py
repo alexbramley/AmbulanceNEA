@@ -68,6 +68,7 @@ def handle_admin_input(admin_input:str):
 
 
 def db_insert_sample_data():
+    # inserts some test data into the database
     my_database_manager.execute("INSERT OR IGNORE INTO Ambulance(AmbulanceCallSign) VALUES (?)", ("AMB001",))
     my_database_manager.execute("INSERT OR IGNORE INTO Ambulance(AmbulanceCallSign) VALUES (?)", ("AMB002",))
     my_database_manager.execute("INSERT OR IGNORE INTO AmbulanceCrew(CrewID, AmbulanceCallSign, CrewHashedPassword) VALUES (?, ?, ?)", ("CRW001","AMB001",en.bcrypt.hashpw("exapmlepassword".encode("utf-8"), en.bcrypt.gensalt())))

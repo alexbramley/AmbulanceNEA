@@ -16,7 +16,6 @@ with open("default-private.pem","rb") as f:
 KEYSIZE = 1024
 MAXMSGLENGTH = 117
 
-# print(rsa.decrypt(rsa.encrypt("test message".encode("utf-8"), DEFAULT_PUBLIC_KEY), DEFAULT_PRIVATE_KEY).decode("utf-8"))
 
 
 class SecureSocket(object):
@@ -207,11 +206,6 @@ class SecureConnection(object):
 					self._most_recent_message = msg
 					self._most_recent_message_fresh = True
 
-				# no longer need to broadcast message to everyone from here, this is done on a higher level now
-				# if type(self._sock) == Server:
-				# 	for conn in self._sock.get_conns():
-				# 		conn.send(self._most_recent_message)
-
 	def _handle_sending(self):
 		"""Loop which handles transmission of data waiting in the queue"""
 		while self._handshaked and self._connected:
@@ -229,27 +223,14 @@ class SecureConnection(object):
 
 	def _receive(self, decode_format):
 		"""Receives a secure method from the connection, which has been send by the other side's _raw_send method"""
-		#print("we are getting a brand new message")
-		#encrypted_msg_length_bytes = self._conn.recv(128)
-		#print(f"received length of message {encrypted_msg_length_bytes}\n")
-		#msg_length_bytes = rsa.decrypt(encrypted_msg_length_bytes, DEFAULT_PRIVATE_KEY)
-		#print(f"decrypted length of message {msg_length_bytes}\n")
-		#msg_length_text = msg_length_bytes.decode(self._sock.get_format())
-
-		#if not msg_length_text:
-		#	return ""
-		#print(f"message is {msg_length_text} bits long")
-		#msg_length = int(msg_length_text)
 
 		number_of_chunks_bytes = rsa.decrypt(self._conn.recv(KEYSIZE//8), self._private_key)
 		number_of_chunks = struct.unpack('>I', number_of_chunks_bytes)[0]
-		#print(f"there are {number_of_chunks} chunks")
 
 		message_bytes = b''
 
 		for i in range(number_of_chunks):
 			encrypted_chunk = self._conn.recv(KEYSIZE//8)
-			#print(f"received message {encrypted_chunk}\n")
 			chunk_bytes = rsa.decrypt(encrypted_chunk, self._private_key)
 			message_bytes += chunk_bytes
 		
@@ -260,9 +241,6 @@ class SecureConnection(object):
 		random_number = struct.unpack(">I", split_message_bytes[1])[0]
 
 		print(f"We received the random number {random_number}")
-
-		# self._conn.send(split_message_bytes[1])
-		#self._conn.send(b'1')
 
 		
 
@@ -316,27 +294,6 @@ class SecureConnection(object):
 			encrypted_chunk = rsa.encrypt(chunk, self._recipient_public_key)
 			
 			self._conn.send(encrypted_chunk)
-
-
-		#msg_length = len(encrypted_message)
-		#_raw_send_length = str(msg_length).encode(self._sock.get_format())
-		#_raw_send_length += b" " * (self._sock.get_header() - len(_raw_send_length))
-		
-		#encrypted__raw_send_length = rsa.encrypt(_raw_send_length, DEFAULT_PUBLIC_KEY)
-
-		#self._conn._raw_send(encrypted__raw_send_length)
-		#print(f"sent length {rsa.decrypt(encrypted__raw_send_length, DEFAULT_PRIVATE_KEY)}\n")
-
-
-
-		# try:
-		# 	received_random_number_bytes = self._conn.recv(len(random_number_bytes))
-		# 	received_random_number = struct.unpack(">I", received_random_number_bytes)[0]
-		# 	if received_random_number != random_number:
-		# 		raise Exception(f"Did not receive correct acknowledgement for transmission\nExpected {random_number} but got {received_random_number}")
-		# except Exception as e:
-		# 	print(e)
-			# raise Exception("Did not receive any acknowledgement for transmission")
 	
 	def _byte_chunks(self, data_bytes, chunk_length):
 		"""Splits a string of byte data into a series of fixed length chunks"""
@@ -429,7 +386,11 @@ class SecureConnection(object):
 		print("they ended the connection")
 		self._disconn(True)
 
-	def _disconn(self, removeconnfromsock:bool): # removeconnfromsock should usually be true, as after a conn has been disconned, it should no longer be in the list of conns on the sock obj, but for example if conns in the sock are being iterated through to be disconned, we shouldn't remove an item from the list that's being iterated through
+	def _disconn(self, removeconnfromsock:bool):
+		# removeconnfromsock should usually be true, as after a conn has been disconned,
+		# it should no longer be in the list of conns on the sock obj,
+		# but for example if conns in the sock are being iterated through to be disconned,
+		# we shouldn't remove an item from the list that's being iterated through
 		"""Disconnects the connection and optionally removes the SecureConnection object from Client or Server object"""
 		try:
 			self._conn.shutdown(socket.SHUT_RDWR)

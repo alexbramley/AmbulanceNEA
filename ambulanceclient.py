@@ -45,7 +45,7 @@ except Exception as e:
 
 
 
-# NETWORK SETUP (RUN FIRST)
+# NETWORK SETUP
 
 
 def connect_to_server():
@@ -150,45 +150,6 @@ def update_map_entities(map_widget):
                 if entity_id in paths:
                     path = paths.pop(entity_id)
                     path.delete()
-    # while True:
-    #     time.sleep(1)
-    #     updated = {}
-
-    #     for entity in my_entity_manager.get_entites():
-    #         if entity.get_id() not in markers and map_widget:
-    #             text = ""
-
-    #             if type(entity) == en.Ambulance:
-    #                 text = entity.get_status().get_name() + " Ambulance"
-    #                 paths[entity.get_id()] = map_widget.set_path([
-    #                     (entity.get_position().x, entity.get_position().y),
-    #                     (entity.get_destination().get_position().x,
-    #                      entity.get_destination().get_position().y)
-    #                 ])
-
-    #             elif type(entity) == en.Emergency:
-    #                 text = f"Emergency severity {entity.get_severity()}"
-
-    #             markers[entity.get_id()] = map_widget.set_marker(
-    #                 entity.get_position().x,
-    #                 entity.get_position().y,
-    #                 text
-    #             )
-    #         else:
-    #             markers[entity.get_id()].set_position(
-    #                 entity.get_position().x,
-    #                 entity.get_position().y
-    #             )
-
-    #         updated[entity.get_id()] = markers[entity.get_id()]
-
-    #     for eid in list(markers):
-    #         if eid not in updated:
-    #             markers[eid].delete()
-    #             markers.pop(eid)
-    #             if eid in paths:
-    #                 paths[eid].delete()
-    #                 paths.pop(eid)
 
 
 
@@ -235,7 +196,7 @@ class LoginFrame(tk.Frame):
             self.status.config(text="Missing fields", fg="red")
             return
 
-        # SEND LOGIN REQUEST TO SERVER
+        # send login request to server
         my_conn_manager.send_socket_message(
             f"<LOGIN>{user}|{pwd}|{clsgn}",
             True
@@ -700,26 +661,8 @@ class MapViewFrame(tk.Frame):
         self.controller = controller
 
         global entry, map_map_widget
-
         
-        # TOP COMMAND BAR
-        
-
-        # def submit():
-        #     if entry and entry.get():
-        #         my_conn_manager.send_socket_message(entry.get(), False)
-
-        # top = tk.Frame(self, bg="gray21")
-        # top.pack(fill="x", padx=10, pady=10)
-
-        # entry = tk.Entry(top, width=40)
-        # entry.pack(side="left", padx=(0, 10))
-
-        # tk.Button(top, text="Send", command=submit).pack(side="left")
-
-        
-        # MAIN CONTENT AREA
-        
+        # MAIN CONTENT
 
         content = tk.Frame(self, bg="gray21")
         content.pack(fill="both", expand=True, padx=10, pady=10)
