@@ -1205,9 +1205,11 @@ class EntityManager(object):
         try:
             if command_data[0] == "CREATE_ENTITY":
                 if command_data[1] == "ambulance":
-                    self.add_new_entity(entity_id=int(argument_data[0]), entity_type=command_data[1], position=vectors.Vector2(float(argument_data[1]), float(argument_data[2])), status=argument_data[3], callsign=argument_data[4]) # command_data: [1]=entitytype argument_data: [0]=id, [1]=xpos, [2]=ypos
+                    self.add_new_entity(entity_id=int(argument_data[0]), entity_type=command_data[1], position=vectors.Vector2(float(argument_data[1]), float(argument_data[2])), status=argument_data[3], callsign=argument_data[4])
+                    # command_data: [1]=entitytype argument_data: [0]=id, [1]=xpos, [2]=ypos
                 elif command_data[1] == "emergency":
-                    self.add_new_entity(entity_id=int(argument_data[0]), entity_type=command_data[1], position=vectors.Vector2(float(argument_data[1]), float(argument_data[2])), severity=int(argument_data[3]), injury=argument_data[4], description=argument_data[5]) # argument_data[3]=severity, [4]=injury, [5]=description
+                    self.add_new_entity(entity_id=int(argument_data[0]), entity_type=command_data[1], position=vectors.Vector2(float(argument_data[1]), float(argument_data[2])), severity=int(argument_data[3]), injury=argument_data[4], description=argument_data[5])
+                    # argument_data[3]=severity, [4]=injury, [5]=description
                 elif command_data[1] == "hospital":
                     self.add_new_entity(entity_id=argument_data[0], entity_type=command_data[1], position=vectors.Vector2(float(argument_data[1]), float(argument_data[2])))
                 else:
@@ -1216,19 +1218,24 @@ class EntityManager(object):
             elif command_data[0] == "DISPLAY_ENTITIES":
                 self.display_entites()
             elif command_data[0] == "UPDATE_ENTITY_POSITION":
-                self.get_entity_by_id(int(argument_data[0])).update_position(vectors.Vector2(float(argument_data[1]), float(argument_data[2]))) # argument_data: [0]=id, [1]=xpos, [2]=ypos
+                self.get_entity_by_id(int(argument_data[0])).update_position(vectors.Vector2(float(argument_data[1]), float(argument_data[2])))
+                # argument_data: [0]=id, [1]=xpos, [2]=ypos
             elif command_data[0] == "REMOVE_ENTITY":
-                self.remove_entity(self.get_entity_by_id(int(argument_data[0]))) # argument_data: [0]=id
+                self.remove_entity(self.get_entity_by_id(int(argument_data[0])))
+                # argument_data: [0]=id
             elif command_data[0] == "SET_DESTINATION":
                 self.get_entity_by_id(int(argument_data[0])).set_destination(self.get_entity_by_id(int(argument_data[1])))
             elif command_data[0] == "SET_STATUS":
-                self.get_entity_by_id(int(argument_data[0])).set_status(vehicle_states[argument_data[1]]) # argument_data: [0]=ambulance_id, [1]=status_name
+                self.get_entity_by_id(int(argument_data[0])).set_status(vehicle_states[argument_data[1]])
+                # argument_data: [0]=ambulance_id, [1]=status_name
             elif command_data[0] == "CREATE_CREW":
-                self.create_crew(int(argument_data[0])) # argument_data: [0] = crew_id
+                self.create_crew(int(argument_data[0]))
+                # argument_data: [0] = crew_id
             elif command_data[0] == "REMOVE_CREW":
                 self.remove_crew(int(argument_data[0]))
             elif command_data[0] == "ASSIGN_CREW":
-                self.assign_crew(self.get_entity_by_id(int(argument_data[0])), self.get_crew_by_id(int(argument_data[1]))) # argument_data: [0]=ambulance_entity_id, [1]=crew_id
+                self.assign_crew(self.get_entity_by_id(int(argument_data[0])), self.get_crew_by_id(int(argument_data[1])))
+                # argument_data: [0]=ambulance_entity_id, [1]=crew_id
             elif command_data[0] == "SET_SEVERITY":
                 self.get_entity_by_id(int(argument_data[0])).set_severity(int(argument_data[1]))
             elif command_data[0] == "ADD_QUALIFICATION": # can be done on emergencies or crews, specify in the command
@@ -1239,10 +1246,12 @@ class EntityManager(object):
                         qualification = qual
                 print(f"the qualification that we're adding is {qualification}")
                 if command_data[1] == "crew":
-                    self.get_crew_by_id(int(argument_data[0])).add_qualification(qualification) # argument_data: [0]=crew_id, [1]=qualification_id
+                    self.get_crew_by_id(int(argument_data[0])).add_qualification(qualification)
+                    # argument_data: [0]=crew_id, [1]=qualification_id
                 elif command_data[1] == "emergency":
                     print("attempting to add new qualification")
-                    self.get_entity_by_id(int(argument_data[0])).add_qualification(qualification) # argument_data: [0]=entity_id, [1]=qualification_id
+                    self.get_entity_by_id(int(argument_data[0])).add_qualification(qualification)
+                    # argument_data: [0]=entity_id, [1]=qualification_id
                 else:
                     raise Exception("You can only add a qualification to an emergency (as a requirement) or to a crew (as an achieved qualification).")
             else:
