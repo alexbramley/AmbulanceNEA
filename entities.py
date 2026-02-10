@@ -937,7 +937,10 @@ class EntityManager(object):
         for hospital in self.get_entities_by_type(Hostpital):
             if closest_hospital == None:
                 closest_hospital = hospital
-            elif vectors.Vector2.Magnitude(vectors.Vector2.Add(hospital.get_position(), vectors.Vector2(-position.x, -position.y))) < vectors.Vector2.Magnitude(vectors.Vector2.Add(closest_hospital.get_position(), vectors.Vector2(-position.x, -position.y))):
+            elif vectors.Vector2.Magnitude(vectors.Vector2.Add(hospital.get_position(),
+                                            vectors.Vector2(-position.x, -position.y))) < vectors.Vector2.Magnitude(
+                                            vectors.Vector2.Add(closest_hospital.get_position(),
+                                            vectors.Vector2(-position.x, -position.y))):
                 closest_hospital = hospital
         return closest_hospital
 
@@ -1263,3 +1266,4 @@ vehicle_states["returning_to_hospital"].set_next_states([vehicle_states["unloadi
 vehicle_states["unloading"].set_next_states([vehicle_states["returning_to_base"]])
 vehicle_states["returning_to_base"].set_next_states([vehicle_states["available"]])
 vehicle_states["handover"].set_next_states([vehicle_states["available"]])
+
